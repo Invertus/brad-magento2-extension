@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+
+    <!-- Plugin to cap pageSize on products query for security -->
+    <type name="Magento\CatalogGraphQl\Model\Resolver\Products">
+        <plugin name="bradsearch_products_pagesize_cap"
+                type="BradSearch\ProductFeatures\Plugin\ProductsQueryPageSizeCap"
+                sortOrder="10"/>
+    </type>
+
+</config>

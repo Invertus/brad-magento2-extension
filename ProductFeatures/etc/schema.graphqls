@@ -1,0 +1,22 @@
+type ProductAttribute @doc(description: "Contains information about a product custom attribute.") {
+    code: String @doc(description: "The attribute code (e.g., 'activity', 'material', 'color').")
+    label: String @doc(description: "The human-readable label of the attribute (e.g., 'Activity', 'Material', 'Color').")
+    value: String @doc(description: "The value of the attribute for this product.")
+    formatted: String @doc(description: "The formatted value using custom mm_format attribute property (e.g., '50 kg' when value is '50').")
+    position: Int @doc(description: "The sort position from catalog_eav_attribute for filter ordering (ElasticSuite compatible).")
+    attribute_id: Int @doc(description: "The attribute ID from eav_attribute table, used for sort tiebreaker.")
+    is_searchable: Boolean @doc(description: "Whether the attribute is searchable (from catalog_eav_attribute.is_searchable).")
+    is_filterable: Boolean @doc(description: "Whether the attribute is filterable in layered navigation or search results (from catalog_eav_attribute.is_filterable OR is_filterable_in_search).")
+    is_visible: Boolean @doc(description: "Whether the attribute is visible on product frontend (from is_visible_on_front). Use for search ranking prioritization.")
+    unit: String @doc(description: "The extracted measurement unit from the value (e.g., 'mm', 'kg', 'W'), or null if no unit detected.")
+    numeric_value: Float @doc(description: "The extracted numeric value from the attribute value (e.g., 125.0 from '125 mm'), or null if no numeric value detected.")
+    has_unit: Boolean @doc(description: "Whether the attribute value contains a measurement unit.")
+}
+
+interface ProductInterface {
+    attributes(group: String @doc(description: "Optional attribute group name to filter attributes by group (e.g., 'Technical Specs', 'Dimensions').")): [ProductAttribute] @doc(description: "All custom product attributes with values, dynamically fetched from the product's attribute set.") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\Features")
+    is_in_stock: Boolean @doc(description: "Whether the product is currently in stock.") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\IsInStock")
+    allows_backorders: Boolean @doc(description: "Whether the product allows backorders (ordering when out of stock).") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\AllowsBackorders")
+    full_url: String @doc(description: "The complete absolute URL for the product page (e.g., 'https://store.com/product-name.html').") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\FullUrl")
+    image_optimized: String @doc(description: "Optimized product image URL with CDN parameters for webp format, auto optimization, and responsive sizing.") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\ImageOptimized")
+}

@@ -1,0 +1,7 @@
+# Copyright © BradSearch. All rights reserved.
+
+type StoreConfig {
+    bradsearch_analytics_enabled: String @doc(description: "Enable BradSearch Analytics")
+    bradsearch_analytics_api_url: String @doc(description: "Analytics API URL for server-side tracking")
+    bradsearch_analytics_website_id: String @doc(description: "Umami website ID for BradSearch Analytics")
+}

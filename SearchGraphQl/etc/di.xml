@@ -1,0 +1,135 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+
+    <!-- Plugin to intercept products search query and return BradSearch results -->
+    <type name="Magento\CatalogGraphQl\Model\Resolver\Products">
+        <plugin name="bradsearch_search_interceptor"
+                type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products"/>
+    </type>
+
+    <!-- Also intercept ElasticSuite resolver if used -->
+    <type name="Smile\ElasticsuiteCatalogGraphQl\Model\Resolver\Products">
+        <plugin name="bradsearch_search_interceptor_elasticsuite"
+                type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products"/>
+    </type>
+
+    <!-- ProductsProvider with BradSearch API dependencies -->
+    <type name="BradSearch\SearchGraphQl\Model\MockData\ProductsProvider">
+        <arguments>
+            <argument name="apiClient" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Client</argument>
+            <argument name="responseMapper" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\ResponseMapper</argument>
+        </arguments>
+    </type>
+
+    <!-- Plugin to intercept aggregations and return mock data when BradSearch enabled -->
+    <type name="Magento\CatalogGraphQl\Model\Resolver\Aggregations">
+        <plugin name="bradsearch_aggregations_interceptor"
+                type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Aggregations"/>
+    </type>
+
+    <!-- Also intercept ElasticSuite aggregations resolver -->
+    <type name="Smile\ElasticsuiteCatalogGraphQl\Model\Resolver\Aggregations">
+        <plugin name="bradsearch_aggregations_interceptor_elasticsuite"
+                type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Aggregations"/>
+    </type>
+
+    <!-- BradSearch unified logger configuration -->
+
+    <!-- Sync components -->
+    <type name="BradSearch\SearchGraphQl\Cron\SyncChangedProducts">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Model\Sync\ChangelogReader">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- API and plugin components -->
+    <type name="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- API Key Validator for private endpoint authentication -->
+    <type name="BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- BradProducts resolver -->
+    <type name="BradSearch\SearchGraphQl\Model\Resolver\BradProducts">
+        <arguments>
+            <argument name="apiKeyValidator" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Aggregations">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Model\Api\Client">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Model\MockData\ProductsProvider">
+        <arguments>
+            <argument name="apiClient" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Client</argument>
+            <argument name="responseMapper" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\ResponseMapper</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Model\Api\ResponseMapper">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Virtual logger that writes to bradsearch.log (unified log file) -->
+    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Magento\Framework\Logger\Monolog">
+        <arguments>
+            <argument name="name" xsi:type="string">bradsearch</argument>
+            <argument name="handlers" xsi:type="array">
+                <item name="debug" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\Handler\DebugHandler</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
+    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\Handler\DebugHandler" type="Magento\Framework\Logger\Handler\Base">
+        <arguments>
+            <argument name="fileName" xsi:type="string">/var/log/bradsearch.log</argument>
+        </arguments>
+    </virtualType>
+
+    <!-- Add mm_popularity attribute to GraphQL product collection -->
+    <type name="Magento\CatalogGraphQl\Model\Resolver\Products\DataProvider\Product\CompositeCollectionProcessor">
+        <arguments>
+            <argument name="collectionProcessors" xsi:type="array">
+                <item name="bradsearch_popularity" xsi:type="object">BradSearch\SearchGraphQl\Model\Resolver\Products\DataProvider\Product\CollectionProcessor\PopularityAttributeProcessor</item>
+            </argument>
+        </arguments>
+    </type>
+
+</config>

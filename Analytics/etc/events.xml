@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="sales_order_payment_capture">
+        <observer name="bradsearch_analytics_order_paid"
+                  instance="BradSearch\Analytics\Observer\OrderPaidEvent" />
+    </event>
+</config>

@@ -1,0 +1,24 @@
+# Copyright © BradSearch. All rights reserved.
+
+input BradProductFilterInput {
+    entity_id: FilterEqualTypeInput @doc(description: "Filter products by entity ID")
+}
+
+interface ProductInterface {
+    sort_popularity: String @doc(description: "Popularity composite string for alphabetical sorting (e.g., 'I123INUL'). Lower values = higher priority.") @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\SortPopularityResolver")
+    sort_popularity_sales: Int @doc(description: "Sales component extracted from sort_popularity (3-digit reversed sales rank).") @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\SortPopularitySalesResolver")
+}
+
+type Query {
+    bradProducts(
+        filter: BradProductFilterInput
+        pageSize: Int = 300
+        currentPage: Int = 1
+    ): BradProductsOutput @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\BradProducts") @doc(description: "Direct MySQL product listing for BradSearch sync. Requires X-BradSearch-Api-Key header. No stock filtering applied.")
+}
+
+type BradProductsOutput {
+    total_count: Int @doc(description: "Total number of matching products")
+    items: [ProductInterface] @doc(description: "Product items")
+    page_info: SearchResultPageInfo @doc(description: "Pagination info")
+}

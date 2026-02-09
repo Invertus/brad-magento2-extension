@@ -1,0 +1,21 @@
+{
+    "name": "bradsearch/module-product-features",
+    "description": "BradSearch Product Features - Exposes custom product attributes via GraphQL",
+    "type": "magento2-module",
+    "version": "1.0.0",
+    "license": "proprietary",
+    "require": {
+        "php": "~7.4.0||~8.1.0",
+        "magento/framework": ">=102.0.0",
+        "magento/module-catalog": ">=104.0.0",
+        "magento/module-catalog-graph-ql": ">=100.4.0"
+    },
+    "autoload": {
+        "files": [
+            "registration.php"
+        ],
+        "psr-4": {
+            "BradSearch\\ProductFeatures\\": ""
+        }
+    }
+}

@@ -1,0 +1,5 @@
+type StoreConfig {
+    bradsearch_autocomplete_enabled: Boolean @doc(description: "Is BradSearch autocomplete enabled")
+    bradsearch_autocomplete_public_key: String @doc(description: "BradSearch public API key")
+    bradsearch_autocomplete_config: String @doc(description: "BradSearch configuration JSON")
+}

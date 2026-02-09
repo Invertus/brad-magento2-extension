@@ -1,0 +1,27 @@
+{
+    "name": "bradsearch/magento-extension",
+    "description": "BradSearch Magento 2 Extension - Autocomplete, Search GraphQL, Product Features, and Analytics",
+    "type": "magento2-module",
+    "version": "1.0.1",
+    "license": "proprietary",
+    "require": {
+        "php": "~7.4.0||~8.1.0||~8.2.0",
+        "magento/framework": "*",
+        "magento/module-catalog-graph-ql": "*",
+        "magento/module-store-graph-ql": "*"
+    },
+    "autoload": {
+        "files": [
+            "Analytics/registration.php",
+            "Autocomplete/registration.php",
+            "ProductFeatures/registration.php",
+            "SearchGraphQl/registration.php"
+        ],
+        "psr-4": {
+            "BradSearch\\Analytics\\": "Analytics/",
+            "BradSearch\\Autocomplete\\": "Autocomplete/",
+            "BradSearch\\ProductFeatures\\": "ProductFeatures/",
+            "BradSearch\\SearchGraphQl\\": "SearchGraphQl/"
+        }
+    }
+}

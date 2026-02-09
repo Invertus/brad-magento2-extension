@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <bradsearch_search>
+            <general>
+                <enabled>0</enabled>
+                <api_url></api_url>
+                <facets_api_url></facets_api_url>
+                <api_key></api_key>
+            </general>
+            <sync>
+                <enabled>0</enabled>
+                <webhook_url></webhook_url>
+                <secure_token></secure_token>
+            </sync>
+            <private_endpoint>
+                <enabled>0</enabled>
+                <api_key></api_key>
+            </private_endpoint>
+        </bradsearch_search>
+    </default>
+</config>

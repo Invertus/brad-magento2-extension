@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Store:etc/config.xsd">
+    <default>
+        <bradsearch_autocomplete>
+            <general>
+                <enabled>0</enabled>
+                <public_key></public_key>
+                <config></config>
+            </general>
+        </bradsearch_autocomplete>
+    </default>
+</config>
