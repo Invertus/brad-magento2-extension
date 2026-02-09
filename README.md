@@ -18,68 +18,7 @@ Custom Magento 2 modules for integrating BradSearch API with Magento GraphQL.
 - Composer 2.x
 - GitHub account with access to the repository
 
-### Step 1: Authenticate with GitHub
-
-Since this is a private repository, you need to authenticate Composer with GitHub.
-
-#### Option A: Using a Fine-Grained Personal Access Token (Recommended)
-
-Fine-grained tokens provide read-only access to a single repository, which is more secure.
-
-1. Go to GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens**
-2. Click "Generate new token"
-3. Give it a name (e.g., "Composer - BradSearch")
-4. Set expiration as needed
-5. Under "Repository access", select "Only select repositories" and choose `Invertus/brad-magento-extension`
-6. Under "Permissions" → "Repository permissions", set "Contents" to **Read-only**
-7. Click "Generate token" and copy the token
-
-Configure Composer to use the token (choose one method):
-
-**Global configuration** (applies to all projects):
-```bash
-composer config --global github-oauth.github.com YOUR_GITHUB_TOKEN
-```
-
-**Project-level configuration** (recommended for CI/CD):
-
-Create an `auth.json` file in your Magento root directory:
-```json
-{
-    "github-oauth": {
-        "github.com": "YOUR_GITHUB_TOKEN"
-    }
-}
-```
-
-> **Note:** Add `auth.json` to your `.gitignore` to avoid committing credentials.
-
-#### Option B: Using SSH Keys
-
-If you have SSH keys configured with GitHub, Composer will use them automatically when the repository URL uses the SSH format (`git@github.com:...`).
-
-### Step 2: Add the Repository
-
-Add the BradSearch repository to your Magento project's `composer.json`:
-
-```bash
-composer config repositories.bradsearch vcs git@github.com:Invertus/brad-magento-extension.git
-```
-
-Or manually add to `composer.json`:
-
-```json
-{
-    "repositories": {
-        "bradsearch": {
-            "type": "vcs",
-            "url": "git@github.com:Invertus/brad-magento-extension.git"
-        }
-    }
-}
-```
-
-### Step 3: Install the Package
+### Step 2: Install the Package
 
 ```bash
 composer require bradsearch/magento-extension:^1.0
@@ -87,7 +26,7 @@ composer require bradsearch/magento-extension:^1.0
 
 This installs all four BradSearch modules to `vendor/bradsearch/magento-extension/`.
 
-### Step 4: Enable the Modules
+### Step 3: Enable the Modules
 
 ```bash
 # Check module status
@@ -109,7 +48,7 @@ bin/magento setup:static-content:deploy
 bin/magento cache:clean
 ```
 
-### Step 5: Configure BradSearch
+### Step 4: Configure BradSearch
 
 After installation, configure the modules in Magento Admin:
 
