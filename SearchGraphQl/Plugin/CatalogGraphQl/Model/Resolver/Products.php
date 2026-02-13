@@ -29,6 +29,8 @@ class Products
 
     private const OPERATION_NAME_PRODUCT_SEARCH = 'ProductSearch';
 
+    private const OPERATION_NAME_FILTER_SEARCH = 'getProductFiltersBySearch';
+
     /**
      * @var ScopeConfigInterface
      */
@@ -111,8 +113,30 @@ class Products
             return $proceed($field, $context, $info, $value, $args);
         }
 
-        // Get search parameters
         $searchTerm = $args['search'] ?? '';
+
+        // For filter/aggregation queries, return minimal result to bypass ElasticSuite.
+        // The Aggregations child resolver will handle fetching facets from BradSearch.
+        if ($this->isFilterSearchOperation($info)) {
+            $this->logger->info('Intercepting filter search with minimal result', [
+                'search_term' => $searchTerm,
+            ]);
+
+            return [
+                'total_count' => 0,
+                'items' => [],
+                'page_info' => [
+                    'total_pages' => 0,
+                    'current_page' => 1,
+                    'page_size' => 0,
+                ],
+                'search_result' => null,
+                'layer_type' => 'search',
+                'search_term' => $searchTerm,
+            ];
+        }
+
+        // Get search parameters for full product search
         $pageSize = (int)($args['pageSize'] ?? 18);
         $currentPage = (int)($args['currentPage'] ?? 1);
         $filters = $args['filter'] ?? [];
@@ -142,7 +166,7 @@ class Products
     }
 
     /**
-     * Check if this is a ProductSearch operation
+     * Check if this is a search operation (ProductSearch or getProductFiltersBySearch)
      *
      * @param array|null $args
      * @param ResolveInfo $info
@@ -154,7 +178,7 @@ class Products
             return false;
         }
 
-        return $this->isProductSearchOperation($info);
+        return $this->isProductSearchOperation($info) || $this->isFilterSearchOperation($info);
     }
 
     /**
@@ -206,6 +230,38 @@ class Products
         } catch (\Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Check if the current GraphQL operation is "getProductFiltersBySearch"
+     *
+     * @param ResolveInfo $info
+     * @return bool
+     */
+    private function isFilterSearchOperation(ResolveInfo $info): bool
+    {
+        if (isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null &&
+            isset($info->operation->name->value)) {
+
+            $operationName = $info->operation->name->value;
+
+            if (strcasecmp($operationName, self::OPERATION_NAME_FILTER_SEARCH) === 0) {
+                return true;
+            }
+        }
+
+        if (isset($_GET['operationName'])) {
+            $operationName = $_GET['operationName'];
+
+            if (strcasecmp($operationName, self::OPERATION_NAME_FILTER_SEARCH) === 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
