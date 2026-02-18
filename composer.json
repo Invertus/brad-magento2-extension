@@ -2,7 +2,6 @@
     "name": "bradsearch/magento-extension",
     "description": "BradSearch Magento 2 Extension - Autocomplete, Search GraphQL, Product Features, and Analytics",
     "type": "magento2-module",
-    "version": "1.0.0",
     "license": "Apache-2.0",
     "homepage": "https://github.com/Invertus/brad-magento2-extension",
     "keywords": [
