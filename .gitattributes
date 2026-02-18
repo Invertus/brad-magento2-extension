@@ -1,0 +1,4 @@
+CLAUDE.md export-ignore
+**/Test/ export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

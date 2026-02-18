@@ -3,7 +3,26 @@
     "description": "BradSearch Magento 2 Extension - Autocomplete, Search GraphQL, Product Features, and Analytics",
     "type": "magento2-module",
     "version": "1.0.1",
-    "license": "proprietary",
+    "license": "Apache-2.0",
+    "homepage": "https://github.com/Invertus/brad-magento2-extension",
+    "keywords": [
+        "magento2",
+        "search",
+        "graphql",
+        "autocomplete",
+        "analytics",
+        "bradsearch"
+    ],
+    "authors": [
+        {
+            "name": "Invertus",
+            "homepage": "https://github.com/Invertus"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/Invertus/brad-magento2-extension/issues",
+        "source": "https://github.com/Invertus/brad-magento2-extension"
+    },
     "require": {
         "php": "~7.4.0||~8.1.0||~8.2.0",
         "magento/framework": "*",

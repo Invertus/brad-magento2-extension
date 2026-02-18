@@ -1,5 +1,7 @@
 # BradSearch Modules
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
 Custom Magento 2 modules for integrating BradSearch API with Magento GraphQL.
 
 ## Modules
@@ -16,9 +18,8 @@ Custom Magento 2 modules for integrating BradSearch API with Magento GraphQL.
 - Magento 2.4.x
 - PHP 7.4, 8.1, or 8.2
 - Composer 2.x
-- GitHub account with access to the repository
 
-### Step 2: Install the Package
+### Step 1: Install the Package
 
 ```bash
 composer require bradsearch/magento-extension:^1.0
@@ -26,7 +27,7 @@ composer require bradsearch/magento-extension:^1.0
 
 This installs all four BradSearch modules to `vendor/bradsearch/magento-extension/`.
 
-### Step 3: Enable the Modules
+### Step 2: Enable the Modules
 
 ```bash
 # Check module status
@@ -48,7 +49,7 @@ bin/magento setup:static-content:deploy
 bin/magento cache:clean
 ```
 
-### Step 4: Configure BradSearch
+### Step 3: Configure BradSearch
 
 After installation, configure the modules in Magento Admin:
 
@@ -184,3 +185,7 @@ BradSearch piggybacks on ElasticSuite by reading from the same changelog table:
 2. Check PHPUnit is available: `vendor/bin/phpunit --version`
 3. Run verification: `php verify-bradsearch-tests.php`
 4. Clear generated code: `rm -rf generated/code generated/metadata`
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
