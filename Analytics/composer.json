@@ -2,7 +2,7 @@
     "name": "bradsearch/module-analytics",
     "description": "BradSearch Analytics Configuration",
     "type": "magento2-module",
-    "version": "1.0.1",
+    "version": "1.0.0",
     "license": "Apache-2.0",
     "require": {
         "php": "~7.4.0||~8.1.0||~8.2.0",
