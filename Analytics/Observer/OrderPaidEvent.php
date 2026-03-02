@@ -12,9 +12,9 @@ use Magento\Framework\Event\ObserverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Observer for sales_order_payment_capture event
+ * Observer for sales_order_payment_pay event
  *
- * Sends order-paid event to analytics API when payment is captured.
+ * Sends order-paid event to analytics API when payment is registered.
  */
 class OrderPaidEvent implements ObserverInterface
 {
