@@ -12,9 +12,13 @@ use Magento\Framework\Event\ObserverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Observer for sales_order_payment_pay event
+ * Observer for sales_order_save_after event
  *
- * Sends order-paid event to analytics API when payment is registered.
+ * Sends order-paid event to analytics API when payment_validated transitions from 0 to 1.
+ *
+ * @todo {BRD-748} - this is custom payment event validation logic check not magento2 default. This must therefore
+ * be configurable in the future
+ *
  */
 class OrderPaidEvent implements ObserverInterface
 {
@@ -48,33 +52,25 @@ class OrderPaidEvent implements ObserverInterface
      */
     public function execute(Observer $observer)
     {
-        // Extract payment from event
-        $payment = $observer->getEvent()->getData('payment');
+        $order = $observer->getEvent()->getData('order');
 
-        if (!$payment) {
-            return;
-        }
-
-        /** @var \Magento\Sales\Model\Order\Payment $payment */
-
-        // Get order from payment
-        $order = $payment->getOrder();
-
-        // Validate order exists
         if (!$order || !$order->getId()) {
             return;
         }
 
-        /** @var \Magento\Sales\Model\Order $order */
+        // Only fire when payment_validated transitions from 0 to 1
+        $currentValue = (int) $order->getData('payment_validated');
+        $originalValue = (int) $order->getOrigData('payment_validated');
 
-        // Get store ID
+        if ($currentValue !== 1 || $originalValue === 1) {
+            return;
+        }
+
         $storeId = (int) $order->getStoreId();
 
-        // Send event (wrapped in try-catch to prevent checkout disruption)
         try {
             $this->eventNotifier->sendOrderPaidEvent($order, $storeId);
         } catch (\Exception $e) {
-            // Log error but don't throw - must not break checkout flow
             $this->logger->error('BradSearch Analytics: Failed to send order-paid event', [
                 'order_id' => $order->getId(),
                 'store_id' => $storeId,
