@@ -16,7 +16,7 @@ use Psr\Log\LoggerInterface;
  *
  * Sends order-paid event to analytics API when a new order is created (first save).
  */
-class OrderPaidEvent implements ObserverInterface
+class OrderCreatedEvent implements ObserverInterface
 {
     /**
      * @var EventNotifier
