@@ -14,11 +14,7 @@ use Psr\Log\LoggerInterface;
 /**
  * Observer for sales_order_save_after event
  *
- * Sends order-paid event to analytics API when payment_validated transitions from 0 to 1.
- *
- * @todo {BRD-748} - this is custom payment event validation logic check not magento2 default. This must therefore
- * be configurable in the future
- *
+ * Sends order-paid event to analytics API when a new order is created (first save).
  */
 class OrderPaidEvent implements ObserverInterface
 {
@@ -58,11 +54,8 @@ class OrderPaidEvent implements ObserverInterface
             return;
         }
 
-        // Only fire when payment_validated transitions from 0 to 1
-        $currentValue = (int) $order->getData('payment_validated');
-        $originalValue = (int) $order->getOrigData('payment_validated');
-
-        if ($currentValue !== 1 || $originalValue === 1) {
+        // Only fire on new order creation (first save — no original entity_id)
+        if ($order->getOrigData('entity_id')) {
             return;
         }
 
