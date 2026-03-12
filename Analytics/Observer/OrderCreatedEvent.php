@@ -12,9 +12,9 @@ use Magento\Framework\Event\ObserverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
- * Observer for sales_order_save_after event
+ * Observer for checkout_submit_all_after event
  *
- * Sends order-paid event to analytics API when a new order is created (first save).
+ * Sends order-paid event to analytics API when a new order is placed.
  */
 class OrderCreatedEvent implements ObserverInterface
 {
@@ -51,11 +51,6 @@ class OrderCreatedEvent implements ObserverInterface
         $order = $observer->getEvent()->getData('order');
 
         if (!$order || !$order->getId()) {
-            return;
-        }
-
-        // Only fire on new order creation (first save — no original entity_id)
-        if ($order->getOrigData('entity_id')) {
             return;
         }
 
