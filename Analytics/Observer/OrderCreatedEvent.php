@@ -58,7 +58,7 @@ class OrderCreatedEvent implements ObserverInterface
 
         try {
             $this->eventNotifier->sendOrderPaidEvent($order, $storeId);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error('BradSearch Analytics: Failed to send order-paid event', [
                 'order_id' => $order->getId(),
                 'store_id' => $storeId,
