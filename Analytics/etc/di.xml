@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+
+    <!-- Inject DebugLogger into Analytics classes for unified debug log control -->
+    <type name="BradSearch\Analytics\Observer\OrderCreatedEvent">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\Analytics\Model\EventNotifier">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+</config>

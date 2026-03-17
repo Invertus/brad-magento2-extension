@@ -13,6 +13,7 @@
                 <api_url></api_url>
                 <facets_api_url></facets_api_url>
                 <api_key></api_key>
+                <debug_logging>0</debug_logging>
             </general>
             <sync>
                 <enabled>0</enabled>

@@ -41,36 +41,43 @@
 
     <!-- BradSearch unified logger configuration -->
 
+    <!-- DebugLogger decorator: suppresses debug/info unless admin setting is enabled -->
+    <type name="BradSearch\SearchGraphQl\Model\Logger\DebugLogger">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+        </arguments>
+    </type>
+
     <!-- Sync components -->
     <type name="BradSearch\SearchGraphQl\Cron\SyncChangedProducts">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <type name="BradSearch\SearchGraphQl\Model\Sync\ChangelogReader">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <type name="BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <!-- API and plugin components -->
     <type name="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <!-- API Key Validator for private endpoint authentication -->
     <type name="BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
@@ -83,13 +90,13 @@
 
     <type name="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Aggregations">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <type name="BradSearch\SearchGraphQl\Model\Api\Client">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
@@ -97,13 +104,13 @@
         <arguments>
             <argument name="apiClient" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Client</argument>
             <argument name="responseMapper" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\ResponseMapper</argument>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
     <type name="BradSearch\SearchGraphQl\Model\Api\ResponseMapper">
         <arguments>
-            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\VirtualLogger</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 

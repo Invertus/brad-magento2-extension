@@ -39,6 +39,12 @@
                     <label>API Key</label>
                     <comment>BradSearch API key for this store view (for future use)</comment>
                 </field>
+                <field id="debug_logging" translate="label comment" type="select" sortOrder="50"
+                       showInDefault="1" showInWebsite="1" showInStore="1">
+                    <label>Enable Debug Logging</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>When enabled, detailed debug and info messages are written to var/log/bradsearch.log. Disable in production to reduce log volume.</comment>
+                </field>
             </group>
             <group id="sync" translate="label" type="text" sortOrder="20"
                    showInDefault="1" showInWebsite="1" showInStore="1">
