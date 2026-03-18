@@ -6,8 +6,10 @@ declare(strict_types=1);
 
 namespace BradSearch\ProductFeatures\Model\Resolver;
 
+use BradSearch\ProductFeatures\Model\UrlRewriteDataLoader;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
+use Magento\Framework\GraphQl\Query\Resolver\ValueFactory;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Model\ScopeInterface;
@@ -21,6 +23,13 @@ use Magento\UrlRewrite\Service\V1\Data\UrlRewrite;
  */
 class FullUrl implements ResolverInterface
 {
+    /**
+     * Toggle to compare batch vs per-product URL rewrite loading.
+     * When true: 1 batch query for all products.
+     * When false: 1 query per product (original behavior).
+     */
+    private bool $useBatchUrlLoading = true;
+
     /**
      * @var ScopeConfigInterface
      */
@@ -37,18 +46,34 @@ class FullUrl implements ResolverInterface
     private $urlFinder;
 
     /**
+     * @var UrlRewriteDataLoader
+     */
+    private UrlRewriteDataLoader $urlRewriteDataLoader;
+
+    /**
+     * @var ValueFactory
+     */
+    private ValueFactory $valueFactory;
+
+    /**
      * @param ScopeConfigInterface $scopeConfig
      * @param StoreManagerInterface $storeManager
      * @param UrlFinderInterface $urlFinder
+     * @param UrlRewriteDataLoader $urlRewriteDataLoader
+     * @param ValueFactory $valueFactory
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
-        UrlFinderInterface $urlFinder
+        UrlFinderInterface $urlFinder,
+        UrlRewriteDataLoader $urlRewriteDataLoader,
+        ValueFactory $valueFactory
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->urlFinder = $urlFinder;
+        $this->urlRewriteDataLoader = $urlRewriteDataLoader;
+        $this->valueFactory = $valueFactory;
     }
 
     /**
@@ -66,9 +91,52 @@ class FullUrl implements ResolverInterface
         }
 
         $product = $value['model'];
+
+        if ($this->useBatchUrlLoading) {
+            return $this->resolveBatch($product);
+        }
+
+        return $this->resolveLegacy($product);
+    }
+
+    /**
+     * Batch URL resolution using deferred ValueFactory pattern
+     *
+     * @param \Magento\Catalog\Model\Product $product
+     * @return \Magento\Framework\GraphQl\Query\Resolver\Value
+     */
+    private function resolveBatch($product)
+    {
+        $productId = (int)$product->getId();
+        $storeId = (int)$this->storeManager->getStore()->getId();
+
+        $this->urlRewriteDataLoader->addToQueue($productId, $storeId);
+
+        return $this->valueFactory->create(function () use ($product, $productId, $storeId) {
+            $productUrl = $product->getProductUrl();
+
+            if ($this->isUnfriendlyUrl($productUrl)) {
+                $rewritePath = $this->urlRewriteDataLoader->getRewrite($productId, $storeId);
+                if ($rewritePath) {
+                    $baseUrl = rtrim($this->storeManager->getStore()->getBaseUrl(), '/');
+                    $productUrl = $baseUrl . '/' . $rewritePath;
+                }
+            }
+
+            return $this->applyPwaUrl($productUrl);
+        });
+    }
+
+    /**
+     * Original per-product URL resolution (legacy path)
+     *
+     * @param \Magento\Catalog\Model\Product $product
+     * @return string|null
+     */
+    private function resolveLegacy($product): ?string
+    {
         $productUrl = $product->getProductUrl();
 
-        // If getProductUrl() returns unfriendly URL, try to find SEO-friendly URL via rewrites
         if ($this->isUnfriendlyUrl($productUrl)) {
             $seoUrl = $this->getSeoFriendlyUrl($product);
             if ($seoUrl) {
@@ -76,7 +144,17 @@ class FullUrl implements ResolverInterface
             }
         }
 
-        // Replace Magento base URL with PWA frontend URL if configured
+        return $this->applyPwaUrl($productUrl);
+    }
+
+    /**
+     * Replace Magento base URL with PWA frontend URL if configured
+     *
+     * @param string $productUrl
+     * @return string
+     */
+    private function applyPwaUrl(string $productUrl): string
+    {
         $pwaUrl = $this->getPwaUrl();
         if ($pwaUrl) {
             $baseUrl = $this->getBaseUrl();
@@ -98,7 +176,7 @@ class FullUrl implements ResolverInterface
     }
 
     /**
-     * Get SEO-friendly URL from url_rewrite table
+     * Get SEO-friendly URL from url_rewrite table (legacy per-product query)
      *
      * @param \Magento\Catalog\Model\Product $product
      * @return string|null

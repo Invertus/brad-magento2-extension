@@ -26,6 +26,32 @@ use Magento\Store\Model\StoreManagerInterface;
 class BradProducts implements ResolverInterface
 {
     /**
+     * Toggle to compare selective vs wildcard attribute loading.
+     * When true: ~12 LEFT JOINs (only attributes used by response fields).
+     * When false: ~200 LEFT JOINs (original behavior, loads all EAV attributes).
+     */
+    private bool $useSelectiveAttributes = true;
+
+    /**
+     * Attributes needed by Load 1 (BradProducts collection).
+     * Load 2 (ProductDataLoader) handles searchable/filterable attributes separately.
+     */
+    private const SELECTIVE_ATTRIBUTES = [
+        'name',
+        'sku',
+        'url_key',
+        'image',
+        'short_description',
+        'description',
+        'price',
+        'special_price',
+        'special_from_date',
+        'special_to_date',
+        'tax_class_id',
+        'mm_popularity',
+    ];
+
+    /**
      * @var ApiKeyValidator
      */
     private ApiKeyValidator $apiKeyValidator;
@@ -78,7 +104,12 @@ class BradProducts implements ResolverInterface
         }
 
         $collection = $this->collectionFactory->create();
-        $collection->addAttributeToSelect('*');
+
+        if ($this->useSelectiveAttributes) {
+            $collection->addAttributeToSelect(self::SELECTIVE_ATTRIBUTES);
+        } else {
+            $collection->addAttributeToSelect('*');
+        }
         $collection->setStoreId($storeId);
         $collection->addStoreFilter($storeId);
 
