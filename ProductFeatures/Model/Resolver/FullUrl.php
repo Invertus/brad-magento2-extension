@@ -76,7 +76,7 @@ class FullUrl implements ResolverInterface
 
         $product = $value['model'];
         $productId = (int)$product->getId();
-        $storeId = (int)$this->storeManager->getStore()->getId();
+        $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
 
         $this->urlRewriteDataLoader->addToQueue($productId, $storeId);
 

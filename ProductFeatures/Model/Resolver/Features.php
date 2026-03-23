@@ -224,10 +224,10 @@ class Features implements ResolverInterface
                 }
 
                 if ($groupName) {
-                    return $this->getAttributesByGroup($product, $groupName);
+                    return $this->getAttributesByGroup($product, $groupName, $storeId);
                 }
 
-                return $this->getAllAttributes($product, $catalogAttributeData);
+                return $this->getAllAttributes($product, $catalogAttributeData, $storeId);
             }
         );
     }
@@ -238,9 +238,10 @@ class Features implements ResolverInterface
      *
      * @param Product $product
      * @param array $catalogAttributeData
+     * @param int $storeId
      * @return array
      */
-    private function getAllAttributes(Product $product, array $catalogAttributeData): array
+    private function getAllAttributes(Product $product, array $catalogAttributeData, int $storeId): array
     {
         $customAttributes = [];
 
@@ -291,7 +292,7 @@ class Features implements ResolverInterface
 
             // Only include string values with content
             if (is_string($value) && strlen($value)) {
-                $label = $attribute->getStoreLabel() ?? '';
+                $label = $attribute->getStoreLabel($storeId) ?? '';
                 // Remove (Slider) suffix from labels if present
                 $label = str_replace('(Slider)', '', $label);
 
@@ -331,9 +332,10 @@ class Features implements ResolverInterface
      *
      * @param Product $product
      * @param string $groupName
+     * @param int $storeId
      * @return array
      */
-    private function getAttributesByGroup(Product $product, string $groupName): array
+    private function getAttributesByGroup(Product $product, string $groupName, int $storeId): array
     {
         $customAttributes = [];
 
@@ -359,7 +361,7 @@ class Features implements ResolverInterface
                 $catalogAttrData = $this->catalogAttributeCache[$attributeCode] ?? [];
                 $customAttributes[] = [
                     'code' => $attributeCode,
-                    'label' => $attribute->getStoreLabel(),
+                    'label' => $attribute->getStoreLabel($storeId),
                     'value' => (string)$value,
                     'formatted' => $this->getFormattedValue($attribute, $value),
                     'position' => $catalogAttrData['position'] ?? null,
