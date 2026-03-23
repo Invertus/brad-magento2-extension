@@ -124,6 +124,7 @@ class BradProducts implements ResolverInterface
 
         $items = [];
         foreach ($collection as $product) {
+            $this->applySpecialPriceOverride($product);
             $productData = $product->getData();
             $productData['model'] = $product;
             $items[] = $productData;
@@ -140,5 +141,29 @@ class BradProducts implements ResolverInterface
                 'total_pages' => $totalPages,
             ],
         ];
+    }
+
+    /**
+     * Override base price with special_price when set.
+     *
+     * In this project, special_price acts as a direct price override (bypassing
+     * coefficient-based calculations), NOT as a standard Magento discount.
+     * Standard Magento only uses special_price when lower than regular price.
+     * Setting it as the base price ensures Magento's price_range resolver
+     * computes correct final_price and final_price_excl_tax values.
+     *
+     * This is client-specific logic. Future clients may need this to be configurable
+     * (e.g., a BradSearch admin toggle for "special_price override mode").
+     *
+     * @param \Magento\Catalog\Model\Product $product
+     * @return void
+     */
+    private function applySpecialPriceOverride($product): void
+    {
+        $specialPrice = (float) $product->getData('special_price');
+
+        if ($specialPrice > 0) {
+            $product->setData('price', $specialPrice);
+        }
     }
 }
