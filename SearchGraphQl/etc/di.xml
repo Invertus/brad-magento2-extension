@@ -130,6 +130,14 @@
         </arguments>
     </virtualType>
 
+    <!-- UpdateConfig resolver for remote configuration -->
+    <type name="BradSearch\SearchGraphQl\Model\Resolver\UpdateConfig">
+        <arguments>
+            <argument name="apiKeyValidator" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
     <!-- Add mm_popularity attribute to GraphQL product collection -->
     <type name="Magento\CatalogGraphQl\Model\Resolver\Products\DataProvider\Product\CompositeCollectionProcessor">
         <arguments>

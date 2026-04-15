@@ -22,3 +22,21 @@ type BradProductsOutput {
     items: [ProductInterface] @doc(description: "Product items")
     page_info: SearchResultPageInfo @doc(description: "Pagination info")
 }
+
+input BradConfigInput {
+    path: String! @doc(description: "Config path (e.g. bradsearch_search/general/enabled)")
+    value: String @doc(description: "Full replacement value. Mutually exclusive with json_merge.")
+    json_merge: String @doc(description: "JSON to deep-merge into existing value. Mutually exclusive with value.")
+}
+
+type BradConfigResult {
+    path: String! @doc(description: "The config path that was processed")
+    success: Boolean! @doc(description: "Whether the update succeeded")
+    message: String @doc(description: "Error message on failure, null on success")
+}
+
+type Mutation {
+    bradUpdateConfig(
+        items: [BradConfigInput!]!
+    ): [BradConfigResult!]! @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\UpdateConfig") @doc(description: "Update BradSearch configuration remotely. Requires X-BradSearch-Api-Key header. Only whitelisted BradSearch config paths are allowed.")
+}
