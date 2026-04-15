@@ -13,6 +13,18 @@ type ProductAttribute @doc(description: "Contains information about a product cu
     has_unit: Boolean @doc(description: "Whether the attribute value contains a measurement unit.")
 }
 
+type BradFeatureDefinition @doc(description: "Catalog-level attribute definition for field mapping generation.") {
+    code: String! @doc(description: "The attribute code (e.g., 'diameter', 'manufacturer').")
+    label: String! @doc(description: "The human-readable label of the attribute.")
+    is_searchable: Boolean! @doc(description: "Whether the attribute is searchable.")
+    is_filterable: Boolean! @doc(description: "Whether the attribute is filterable in layered navigation or search results.")
+    position: Int @doc(description: "The sort position from catalog_eav_attribute.")
+}
+
+type Query {
+    bradFeatures: [BradFeatureDefinition] @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\FeatureDefinitions") @doc(description: "Catalog-level attribute definitions for BradSearch field mapping generation. Requires X-BradSearch-Api-Key header.")
+}
+
 interface ProductInterface {
     attributes(group: String @doc(description: "Optional attribute group name to filter attributes by group (e.g., 'Technical Specs', 'Dimensions').")): [ProductAttribute] @doc(description: "All custom product attributes with values, dynamically fetched from the product's attribute set.") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\Features")
     is_in_stock: Boolean @doc(description: "Whether the product is currently in stock.") @resolver(class: "BradSearch\\ProductFeatures\\Model\\Resolver\\IsInStock")
