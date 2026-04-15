@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace BradSearch\ProductFeatures\Model\Resolver;
 
+use BradSearch\ProductFeatures\Model\AttributeFilter;
 use BradSearch\ProductFeatures\Model\ProductDataLoader;
 use Magento\Catalog\Model\Product;
 use Magento\Framework\App\ResourceConnection;
@@ -76,88 +77,6 @@ class Features implements ResolverInterface
         $this->priceCurrency = $priceCurrency;
         $this->resourceConnection = $resourceConnection;
     }
-
-    /**
-     * System attributes to exclude from custom attributes response
-     */
-    private const EXCLUDED_ATTRIBUTES = [
-        // Core identifiers
-        'sku',
-        'name',
-        'entity_id',
-        'attribute_set_id',
-        'type_id',
-        'row_id',
-        // Content
-        'description',
-        'short_description',
-        // Pricing (handled separately via price_range)
-        'price',
-        'special_price',
-        'cost',
-        'tier_price',
-        'msrp',
-        'msrp_display_actual_price_type',
-        // Product settings
-        'weight',
-        'status',
-        'visibility',
-        'tax_class_id',
-        'category_ids',
-        'options_container',
-        'required_options',
-        'has_options',
-        'quantity_and_stock_status',
-        'country_of_manufacture',
-        // Media
-        'image',
-        'small_image',
-        'thumbnail',
-        'swatch_image',
-        'image_label',
-        'small_image_label',
-        'thumbnail_label',
-        'media_gallery',
-        'gallery',
-        // URLs and SEO
-        'url_key',
-        'url_path',
-        'request_path',
-        'meta_title',
-        'meta_keyword',
-        'meta_description',
-        // Dates
-        'created_at',
-        'updated_at',
-        'news_from_date',
-        'news_to_date',
-        'special_from_date',
-        'special_to_date',
-        // Layout/design
-        'page_layout',
-        'custom_layout',
-        'custom_layout_update',
-        'custom_design',
-        'custom_design_from',
-        'custom_design_to',
-        // Gift options
-        'gift_message_available',
-        'gift_wrapping_available',
-        'gift_wrapping_price',
-        // Downloadable products
-        'links_purchased_separately',
-        'links_title',
-        'links_exist',
-        'samples_title'
-    ];
-
-    /**
-     * Attribute prefixes to exclude (e.g., price_at, price_de, etc.)
-     * These expose country-specific pricing and should use price_range instead
-     */
-    private const EXCLUDED_ATTRIBUTE_PREFIXES = [
-        'price_'
-    ];
 
     /**
      * Unit patterns for extraction - ordered by specificity
@@ -251,13 +170,7 @@ class Features implements ResolverInterface
         foreach ($attributes as $attribute) {
             $attributeCode = $attribute->getAttributeCode();
 
-            // Skip excluded system attributes
-            if (in_array($attributeCode, self::EXCLUDED_ATTRIBUTES)) {
-                continue;
-            }
-
-            // Skip attributes matching excluded prefixes (e.g., price_*)
-            if ($this->hasExcludedPrefix($attributeCode)) {
+            if (AttributeFilter::isExcluded($attributeCode)) {
                 continue;
             }
 
@@ -309,7 +222,7 @@ class Features implements ResolverInterface
 
                 $customAttributes[] = [
                     'code' => $attributeCode,
-                    'label' => $label ?: $this->formatLabel($attributeCode),
+                    'label' => $label ?: AttributeFilter::formatLabel($attributeCode),
                     'value' => $value,
                     'formatted' => $this->getFormattedValue($attribute, $value),
                     'position' => $attrMeta['position'] ?? null,
@@ -423,20 +336,6 @@ class Features implements ResolverInterface
         }
 
         return $data;
-    }
-
-    /**
-     * Format attribute code to human-readable label
-     *
-     * @param string $attributeCode
-     * @return string
-     */
-    private function formatLabel(string $attributeCode): string
-    {
-        // Convert snake_case to Title Case
-        $words = explode('_', $attributeCode);
-        $words = array_map('ucfirst', $words);
-        return implode(' ', $words);
     }
 
     /**
@@ -558,19 +457,4 @@ class Features implements ResolverInterface
         return $normalizations[$unit] ?? $unit;
     }
 
-    /**
-     * Check if attribute code starts with any excluded prefix
-     *
-     * @param string $attributeCode
-     * @return bool
-     */
-    private function hasExcludedPrefix(string $attributeCode): bool
-    {
-        foreach (self::EXCLUDED_ATTRIBUTE_PREFIXES as $prefix) {
-            if (strpos($attributeCode, $prefix) === 0) {
-                return true;
-            }
-        }
-        return false;
-    }
 }
