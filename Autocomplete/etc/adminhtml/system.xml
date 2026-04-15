@@ -29,7 +29,7 @@
                 <field id="config" translate="label comment" type="textarea" sortOrder="30"
                        showInDefault="1" showInWebsite="1" showInStore="1">
                     <label>Configuration JSON</label>
-                    <comment><![CDATA[JSON config for web component. Example: {"token": "xxx", "api": "/search", "threshold": "3", "limit": "6"}]]></comment>
+                    <comment><![CDATA[JSON config forwarded to the autocomplete web component. All keys are optional — only specify overrides. Available keys: apiConfig (url, limit, fields, mapping), options (width, cardView, threshold, showHeader, columns, highlights, condensed, currency), translations (noData, categories, buttonLoadMore, loading, error, sku, brand, priceNoTax, priceWithTax, etc.), styles (error, button, global, filters, highlights, productCard), overrideStyles (CSS string), scriptUrl, searchInputSelector, redirectUrl, categoryFilterCodes. Example: {"apiConfig": {"url": "https://api.bradsearch.com/api/v1/store/query"}, "options": {"currency": "SEK"}, "categoryFilterCodes": ["abc123"]}]]></comment>
                 </field>
             </group>
         </section>
