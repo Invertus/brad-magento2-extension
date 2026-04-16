@@ -133,6 +133,7 @@ class Products
                 'search_result' => null,
                 'layer_type' => 'search',
                 'search_term' => $searchTerm,
+                'filters' => $args['filter'] ?? [],
             ];
         }
 

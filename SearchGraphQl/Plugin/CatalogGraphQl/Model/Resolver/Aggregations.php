@@ -118,14 +118,16 @@ class Aggregations
         // Only intercept for search operations when BradSearch is enabled
         if ($isEnabled && $isSearch) {
             $searchTerm = $this->extractSearchTerm($value, $args, $info);
+            $filters = $this->extractFilters($value, $args, $info);
 
             $this->logger->debug('Intercepting aggregations for BradSearch', [
                 'search_term' => $searchTerm,
+                'filter_count' => count($filters),
             ]);
 
             // Try BradSearch, fallback to default aggregations on error
             try {
-                return $this->aggregationsProvider->getAggregations($searchTerm);
+                return $this->aggregationsProvider->getAggregations($searchTerm, $filters);
             } catch (\Throwable $e) {
                 $this->logger->error('BradSearch API failed, falling back to default aggregations', [
                     'error' => $e->getMessage(),
@@ -240,5 +242,35 @@ class Aggregations
         }
 
         return '';
+    }
+
+    /**
+     * Extract filters from context, excluding non-search filters
+     *
+     * @param array|null $value
+     * @param array|null $args
+     * @param ResolveInfo $info
+     * @return array
+     */
+    private function extractFilters(?array $value, ?array $args, ResolveInfo $info): array
+    {
+        // Try value context first (forwarded from Products plugin)
+        $filters = $value['filters'] ?? null;
+
+        // Try direct GraphQL argument
+        if (empty($filters) && isset($args['filter'])) {
+            $filters = $args['filter'];
+        }
+
+        // Try GraphQL variables
+        if (empty($filters) && isset($info->variableValues['filter'])) {
+            $filters = $info->variableValues['filter'];
+        }
+
+        if (!is_array($filters) || empty($filters)) {
+            return [];
+        }
+
+        return $filters;
     }
 }

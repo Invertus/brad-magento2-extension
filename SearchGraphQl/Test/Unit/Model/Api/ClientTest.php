@@ -166,6 +166,121 @@ class ClientTest extends TestCase
     }
 
     /**
+     * Test fetchFacets with v1 URL sends filters in attributes[code][idx] format
+     */
+    public function testFetchFacetsWithV1Filters(): void
+    {
+        $filters = [
+            'brand' => ['eq' => 'Bosch'],
+            'price' => ['from' => '50', 'to' => '200'],
+            'color' => ['in' => ['Red', 'Blue']],
+            'category_id' => ['eq' => '42'], // excluded filter
+        ];
+
+        $this->scopeConfigMock
+            ->method('getValue')
+            ->willReturnMap([
+                ['bradsearch_search/general/facets_api_url', 'store', 1, 'https://api.example.com/api/v1/verkter-lt/aggregations'],
+                ['bradsearch_search/general/api_key', 'store', 1, 'test-token'],
+                ['general/locale/code', 'store', 1, 'lt-LT'],
+            ]);
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn(json_encode(['facets' => ['attributes' => []]]));
+
+        $this->curlMock->expects($this->once())
+            ->method('get')
+            ->with($this->callback(function ($url) {
+                // V1 format: attributes[code][idx]
+                $hasBrand = str_contains($url, urlencode('attributes[brand][0]') . '=Bosch');
+                $hasPriceFrom = str_contains($url, urlencode('attributes[price][from]') . '=50');
+                $hasPriceTo = str_contains($url, urlencode('attributes[price][to]') . '=200');
+                $hasColor0 = str_contains($url, urlencode('attributes[color][0]') . '=Red');
+                $hasColor1 = str_contains($url, urlencode('attributes[color][1]') . '=Blue');
+                // Excluded filter should NOT be present
+                $noCategoryId = !str_contains($url, 'category_id');
+
+                return $hasBrand && $hasPriceFrom && $hasPriceTo && $hasColor0 && $hasColor1 && $noCategoryId;
+            }));
+
+        $this->subject->fetchFacets('drill', $filters);
+    }
+
+    /**
+     * Test fetchFacets with v2 URL sends filters in flat format
+     */
+    public function testFetchFacetsWithV2Filters(): void
+    {
+        $filters = [
+            'brand' => ['eq' => 'Bosch'],
+            'price' => ['from' => '50', 'to' => '200'],
+            'color' => ['in' => ['Red', 'Blue']],
+            'show_out_of_stock' => ['eq' => '1'], // excluded filter
+        ];
+
+        $this->scopeConfigMock
+            ->method('getValue')
+            ->willReturnMap([
+                ['bradsearch_search/general/facets_api_url', 'store', 1, 'https://api.example.com/api/v2/aggregations'],
+                ['bradsearch_search/general/api_key', 'store', 1, 'test-token'],
+                ['general/locale/code', 'store', 1, 'lt-LT'],
+            ]);
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn(json_encode(['facets' => []]));
+
+        $this->curlMock->expects($this->once())
+            ->method('get')
+            ->with($this->callback(function ($url) {
+                // V2 format: flat params
+                $hasBrand = str_contains($url, urlencode('brand[0]') . '=Bosch');
+                $hasPriceMin = str_contains($url, 'price_min=50');
+                $hasPriceMax = str_contains($url, 'price_max=200');
+                $hasColor0 = str_contains($url, urlencode('color[0]') . '=Red');
+                $hasColor1 = str_contains($url, urlencode('color[1]') . '=Blue');
+                // Excluded filter should NOT be present
+                $noOutOfStock = !str_contains($url, 'show_out_of_stock');
+                // Should NOT use attributes[] wrapper
+                $noAttributes = !str_contains($url, 'attributes');
+
+                return $hasBrand && $hasPriceMin && $hasPriceMax && $hasColor0 && $hasColor1 && $noOutOfStock && $noAttributes;
+            }));
+
+        $this->subject->fetchFacets('drill', $filters);
+    }
+
+    /**
+     * Test fetchFacets without filters sends only token and q
+     */
+    public function testFetchFacetsWithoutFilters(): void
+    {
+        $this->scopeConfigMock
+            ->method('getValue')
+            ->willReturnMap([
+                ['bradsearch_search/general/facets_api_url', 'store', 1, 'https://api.example.com/api/v2/aggregations'],
+                ['bradsearch_search/general/api_key', 'store', 1, 'test-token'],
+                ['general/locale/code', 'store', 1, 'en-US'],
+            ]);
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn(json_encode(['facets' => []]));
+
+        $this->curlMock->expects($this->once())
+            ->method('get')
+            ->with($this->callback(function ($url) {
+                $parsed = parse_url($url);
+                parse_str($parsed['query'] ?? '', $params);
+                // Should only have token and q
+                return count($params) === 2
+                    && isset($params['token'])
+                    && isset($params['q'])
+                    && $params['q'] === 'laptop';
+            }));
+
+        $this->subject->fetchFacets('laptop');
+    }
+
+    /**
      * Test fetchFacets with missing configuration
      */
     public function testFetchFacetsWithMissingConfig(): void

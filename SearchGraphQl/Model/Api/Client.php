@@ -24,6 +24,8 @@ class Client
     private const CONFIG_PATH_FACETS_API_URL = 'bradsearch_search/general/facets_api_url';
     private const CONFIG_PATH_API_KEY = 'bradsearch_search/general/api_key';
 
+    private const EXCLUDED_FILTERS = ['show_out_of_stock', 'category_id', 'category_uid'];
+
     /**
      * @var Curl
      */
@@ -130,10 +132,11 @@ class Client
      * Fetch facets/aggregations via BradSearch API
      *
      * @param string $searchTerm
+     * @param array $filters Magento filter array (e.g., ['brand' => ['eq' => 'Nike']])
      * @return array
      * @throws \Exception
      */
-    public function fetchFacets(string $searchTerm): array
+    public function fetchFacets(string $searchTerm, array $filters = []): array
     {
         $storeId = $this->getStoreId();
         $apiUrl = $this->getFacetsApiUrl($storeId);
@@ -144,7 +147,8 @@ class Client
             throw new \Exception('BradSearch Facets API URL or token not configured');
         }
 
-        $params = $this->buildFacetsRequestParams($searchTerm, $token);
+        $isV2 = $this->isV2Api($apiUrl);
+        $params = $this->buildFacetsRequestParams($searchTerm, $token, $filters, $isV2);
         $url = $apiUrl . '?' . http_build_query($params);
 
         $this->logger->debug('Making Facets API request', [
@@ -189,14 +193,24 @@ class Client
      *
      * @param string $searchTerm
      * @param string $token
+     * @param array $filters
+     * @param bool $isV2
      * @return array
      */
-    private function buildFacetsRequestParams(string $searchTerm, string $token): array
+    private function buildFacetsRequestParams(string $searchTerm, string $token, array $filters, bool $isV2): array
     {
-        return [
+        $params = [
             'token' => $token,
             'q' => $searchTerm,
         ];
+
+        if (empty($filters)) {
+            return $params;
+        }
+
+        $this->appendFilterParams($params, $filters, $isV2);
+
+        return $params;
     }
 
     /**
@@ -240,23 +254,46 @@ class Client
             }
         }
 
-        // Transform Magento filters to BradSearch format
-        // Input: ['attr_code' => ['eq' => 'value'] or ['in' => ['val1', 'val2']] or ['from' => '100', 'to' => '200']]
-        // Output: ['attributes[attr_code][0]' => 'value'] or ['attributes[attr_code][from]' => '100', 'attributes[attr_code][to]' => '200']
-        $excludedFilters = ['show_out_of_stock', 'category_id', 'category_uid'];
+        $this->appendFilterParams($params, $filters, false);
 
+        return $params;
+    }
+
+    /**
+     * Detect whether the API URL uses v2 format
+     *
+     * @param string $apiUrl
+     * @return bool
+     */
+    private function isV2Api(string $apiUrl): bool
+    {
+        return str_contains($apiUrl, '/v2/');
+    }
+
+    /**
+     * Append filter parameters in v1 or v2 format
+     *
+     * V1: attributes[code][idx]=value, attributes[code][from]=X, attributes[code][to]=Y
+     * V2: code[idx]=value, code_min=X, code_max=Y
+     *
+     * @param array &$params
+     * @param array $filters Magento filter array
+     * @param bool $isV2
+     */
+    private function appendFilterParams(array &$params, array $filters, bool $isV2): void
+    {
         foreach ($filters as $attributeCode => $condition) {
-            if (in_array($attributeCode, $excludedFilters, true)) {
+            if (in_array($attributeCode, self::EXCLUDED_FILTERS, true)) {
                 continue;
             }
 
             // Handle range filters (from/to)
             if (isset($condition['from']) || isset($condition['to'])) {
                 if (isset($condition['from'])) {
-                    $params["attributes[$attributeCode][from]"] = $condition['from'];
+                    $params[$isV2 ? "{$attributeCode}_min" : "attributes[$attributeCode][from]"] = $condition['from'];
                 }
                 if (isset($condition['to'])) {
-                    $params["attributes[$attributeCode][to]"] = $condition['to'];
+                    $params[$isV2 ? "{$attributeCode}_max" : "attributes[$attributeCode][to]"] = $condition['to'];
                 }
                 continue;
             }
@@ -269,12 +306,11 @@ class Client
                 $values = $condition['in'];
             }
 
+            $keyPrefix = $isV2 ? $attributeCode : "attributes[$attributeCode]";
             foreach ($values as $index => $value) {
-                $params["attributes[$attributeCode][$index]"] = $value;
+                $params["{$keyPrefix}[$index]"] = $value;
             }
         }
-
-        return $params;
     }
 
     /**
