@@ -226,6 +226,16 @@ class UpdateConfig implements ResolverInterface
             return $this->error($path, $validationError);
         }
 
+        $currentValue = (string)$this->scopeConfig->getValue(
+            $path,
+            ScopeInterface::SCOPE_STORE,
+            $storeId
+        );
+
+        if ($currentValue === $value) {
+            return ['path' => $path, 'success' => false, 'message' => 'No change.'];
+        }
+
         $this->configWriter->save(
             $path,
             $value,
