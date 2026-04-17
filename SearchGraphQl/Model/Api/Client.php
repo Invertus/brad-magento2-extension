@@ -86,7 +86,8 @@ class Client
             throw new \Exception('BradSearch API URL or token not configured');
         }
 
-        $params = $this->buildRequestParams($searchTerm, $token, $pageSize, $currentPage, $filters, $sort);
+        $isV2 = $this->isV2Api($apiUrl);
+        $params = $this->buildRequestParams($searchTerm, $token, $pageSize, $currentPage, $filters, $sort, $isV2);
         $url = $apiUrl . '?' . http_build_query($params);
 
         $this->logger->debug('Making API request', [
@@ -230,7 +231,8 @@ class Client
         int $pageSize,
         int $currentPage,
         array $filters = [],
-        array $sort = []
+        array $sort = [],
+        bool $isV2 = false
     ): array {
         $offset = ($currentPage - 1) * $pageSize;
 
@@ -254,7 +256,7 @@ class Client
             }
         }
 
-        $this->appendFilterParams($params, $filters, false);
+        $this->appendFilterParams($params, $filters, $isV2);
 
         return $params;
     }

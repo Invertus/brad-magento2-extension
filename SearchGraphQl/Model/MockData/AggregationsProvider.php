@@ -168,16 +168,19 @@ class AggregationsProvider
                 continue;
             }
 
-            // Grouped facets (features/attributes): display names as keys, arrays of values
+            // Grouped facets (features/attributes): codes as keys, {label, values} structure
+            // e.g. {"manufacturer": {"label": "Gamintojas", "values": [...]}}
             if ($facetName === 'features' || $facetName === 'attributes') {
-                foreach ($facetData as $displayName => $values) {
-                    if (!is_array($values)) {
+                foreach ($facetData as $code => $entry) {
+                    if (!is_array($entry)) {
                         continue;
                     }
+                    $label = $entry['label'] ?? $code;
+                    $values = $entry['values'] ?? [];
                     $options = $this->mapFacetOptions($values);
-                    $aggregations[$displayName] = [
-                        'attribute_code' => $displayName,
-                        'label' => $displayName,
+                    $aggregations[$code] = [
+                        'attribute_code' => $code,
+                        'label' => $label,
                         'count' => count($options),
                         'options' => $options,
                     ];

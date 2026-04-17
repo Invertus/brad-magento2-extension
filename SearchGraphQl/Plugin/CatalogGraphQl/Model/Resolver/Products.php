@@ -153,7 +153,12 @@ class Products
 
         // Try BradSearch, fallback to default search on error
         try {
-            return $this->productsProvider->getSearchResults($searchTerm, $pageSize, $currentPage, $filters, $sort);
+            $result = $this->productsProvider->getSearchResults($searchTerm, $pageSize, $currentPage, $filters, $sort);
+            // Forward search_term and filters so the Aggregations child resolver can reuse them
+            $result['search_term'] = $searchTerm;
+            $result['filters'] = $filters;
+
+            return $result;
         } catch (\Throwable $e) {
             $this->logger->error('BradSearch API failed, falling back to default search', [
                 'error' => $e->getMessage(),
