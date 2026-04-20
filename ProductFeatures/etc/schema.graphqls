@@ -19,6 +19,7 @@ type BradFeatureDefinition @doc(description: "Catalog-level attribute definition
     is_searchable: Boolean! @doc(description: "Whether the attribute is searchable.")
     is_filterable: Boolean! @doc(description: "Whether the attribute is filterable in layered navigation or search results.")
     position: Int @doc(description: "The sort position from catalog_eav_attribute.")
+    has_unit: Boolean @doc(description: "Whether the attribute carries a measurement unit (derived from the admin-set mm_format column). Consumers should exclude unit features from fulltext aggregation to avoid polluting the index with numeric-with-unit strings like '50 kg'.")
 }
 
 type Query {

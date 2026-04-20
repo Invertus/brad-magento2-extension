@@ -33,6 +33,14 @@ class FeatureDefinitions implements ResolverInterface
     private ResourceConnection $resourceConnection;
 
     /**
+     * Cached result of whether eav_attribute.mm_format column exists on this install.
+     * Set to null until checked.
+     *
+     * @var bool|null
+     */
+    private ?bool $mmFormatColumnExists = null;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param ResourceConnection $resourceConnection
      */
@@ -67,11 +75,17 @@ class FeatureDefinitions implements ResolverInterface
     private function getFeatureDefinitions(int $storeId): array
     {
         $connection = $this->resourceConnection->getConnection();
+        $hasMmFormat = $this->hasMmFormatColumn();
+
+        $eaColumns = ['attribute_code', 'attribute_id', 'frontend_label'];
+        if ($hasMmFormat) {
+            $eaColumns[] = 'mm_format';
+        }
 
         $select = $connection->select()
             ->from(
                 ['ea' => $connection->getTableName('eav_attribute')],
-                ['attribute_code', 'attribute_id', 'frontend_label']
+                $eaColumns
             )
             ->joinInner(
                 ['cea' => $connection->getTableName('catalog_eav_attribute')],
@@ -104,15 +118,43 @@ class FeatureDefinitions implements ResolverInterface
                 $isFilterable = false;
             }
 
+            // has_unit is derived from the admin-curated mm_format column (e.g. '%s kg', '%s mm').
+            // Non-empty format strings mark attributes that carry a measurement unit.
+            $hasUnit = $hasMmFormat && !empty($row['mm_format'] ?? null);
+
             $features[] = [
                 'code' => $code,
                 'label' => $label ?: AttributeFilter::formatLabel($code),
                 'is_searchable' => (bool)$row['is_searchable'],
                 'is_filterable' => $isFilterable,
                 'position' => $row['position'] !== null ? (int)$row['position'] : null,
+                'has_unit' => $hasUnit,
             ];
         }
 
         return $features;
+    }
+
+    /**
+     * Check if eav_attribute.mm_format column exists. The column is installed by the
+     * Magenmagic_Sync module (Verkter-specific) and holds sprintf format strings like
+     * '%s kg' or '%s mm' that admins set on unit-bearing attributes. Shops without
+     * that module won't have the column — degrade gracefully.
+     *
+     * @return bool
+     */
+    private function hasMmFormatColumn(): bool
+    {
+        if ($this->mmFormatColumnExists !== null) {
+            return $this->mmFormatColumnExists;
+        }
+
+        $connection = $this->resourceConnection->getConnection();
+        $this->mmFormatColumnExists = $connection->tableColumnExists(
+            $connection->getTableName('eav_attribute'),
+            'mm_format'
+        );
+
+        return $this->mmFormatColumnExists;
     }
 }
