@@ -7,6 +7,18 @@ input BradProductFilterInput {
 interface ProductInterface {
     sort_popularity: String @doc(description: "Popularity composite string for alphabetical sorting (e.g., 'I123INUL'). Lower values = higher priority.") @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\SortPopularityResolver")
     sort_popularity_sales: Int @doc(description: "Sales component extracted from sort_popularity (3-digit reversed sales rank).") @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\SortPopularitySalesResolver")
+    calculated_price: BradSearchCalculatedPriceRange @doc(description: "Price computed via BradSearch\\SearchGraphQl\\Api\\PriceCalculatorInterface. Populated by the bradProducts query; null elsewhere. Use this field (not price_range) for BradSearch sync.")
+}
+
+type BradSearchCalculatedPriceRange {
+    minimum_price: BradSearchCalculatedPrice! @doc(description: "The lowest effective price for the product.")
+    maximum_price: BradSearchCalculatedPrice @doc(description: "The highest effective price for the product.")
+}
+
+type BradSearchCalculatedPrice {
+    regular_price: Money @doc(description: "Pre-discount price.")
+    final_price: Money @doc(description: "Effective price including tax.")
+    final_price_excl_tax: Money @doc(description: "Effective price excluding tax.")
 }
 
 type Query {

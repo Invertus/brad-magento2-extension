@@ -6,7 +6,9 @@ declare(strict_types=1);
 
 namespace BradSearch\SearchGraphQl\Model\Resolver;
 
+use BradSearch\SearchGraphQl\Api\PriceCalculatorInterface;
 use BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator;
+use BradSearch\SearchGraphQl\Model\Price\CalculatedPriceMapper;
 use Magento\Catalog\Model\Product\Attribute\Source\Status;
 use Magento\Catalog\Model\Product\Visibility;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
@@ -60,18 +62,34 @@ class BradProducts implements ResolverInterface
     private StoreManagerInterface $storeManager;
 
     /**
+     * @var PriceCalculatorInterface
+     */
+    private PriceCalculatorInterface $priceCalculator;
+
+    /**
+     * @var CalculatedPriceMapper
+     */
+    private CalculatedPriceMapper $priceMapper;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param CollectionFactory $collectionFactory
      * @param StoreManagerInterface $storeManager
+     * @param PriceCalculatorInterface $priceCalculator
+     * @param CalculatedPriceMapper $priceMapper
      */
     public function __construct(
         ApiKeyValidator $apiKeyValidator,
         CollectionFactory $collectionFactory,
-        StoreManagerInterface $storeManager
+        StoreManagerInterface $storeManager,
+        PriceCalculatorInterface $priceCalculator,
+        CalculatedPriceMapper $priceMapper
     ) {
         $this->apiKeyValidator = $apiKeyValidator;
         $this->collectionFactory = $collectionFactory;
         $this->storeManager = $storeManager;
+        $this->priceCalculator = $priceCalculator;
+        $this->priceMapper = $priceMapper;
     }
 
     /**
@@ -124,9 +142,14 @@ class BradProducts implements ResolverInterface
 
         $items = [];
         foreach ($collection as $product) {
-            $this->applySpecialPriceOverride($product);
             $productData = $product->getData();
             $productData['model'] = $product;
+
+            $calculated = $this->priceCalculator->calculate($product, $storeId);
+            $productData['calculated_price'] = $calculated !== null
+                ? $this->priceMapper->toGraphQlArray($calculated)
+                : null;
+
             $items[] = $productData;
         }
 
@@ -141,29 +164,5 @@ class BradProducts implements ResolverInterface
                 'total_pages' => $totalPages,
             ],
         ];
-    }
-
-    /**
-     * Override base price with special_price when set.
-     *
-     * In this project, special_price acts as a direct price override (bypassing
-     * coefficient-based calculations), NOT as a standard Magento discount.
-     * Standard Magento only uses special_price when lower than regular price.
-     * Setting it as the base price ensures Magento's price_range resolver
-     * computes correct final_price and final_price_excl_tax values.
-     *
-     * This is client-specific logic. Future clients may need this to be configurable
-     * (e.g., a BradSearch admin toggle for "special_price override mode").
-     *
-     * @param \Magento\Catalog\Model\Product $product
-     * @return void
-     */
-    private function applySpecialPriceOverride($product): void
-    {
-        $specialPrice = (float) $product->getData('special_price');
-
-        if ($specialPrice > 0) {
-            $product->setData('price', $specialPrice);
-        }
     }
 }

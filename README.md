@@ -26,6 +26,14 @@ bin/magento cache:clean
 
 You'll need API credentials from your BradSearch account.
 
+## Extending
+
+- **Custom price logic for the `bradProducts` sync?** Implement
+  `BradSearch\SearchGraphQl\Api\PriceCalculatorInterface` in a bridge
+  module inside your project. See
+  [`SearchGraphQl/PRICE_CALCULATOR.md`](SearchGraphQl/PRICE_CALCULATOR.md)
+  for the full walkthrough.
+
 ## Updating
 
 ```bash

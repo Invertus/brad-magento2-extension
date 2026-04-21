@@ -7,6 +7,14 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
 
+    <!--
+        Default implementation of the BradSearch price-calculation contract.
+        Clients with bespoke pricing logic should override this <preference>
+        in their own bridge module (e.g. Magenmagic_BradSearchPrice for Verkter).
+    -->
+    <preference for="BradSearch\SearchGraphQl\Api\PriceCalculatorInterface"
+                type="BradSearch\SearchGraphQl\Model\Price\VanillaMagentoPriceCalculator"/>
+
     <!-- Plugin to intercept products search query and return BradSearch results -->
     <type name="Magento\CatalogGraphQl\Model\Resolver\Products">
         <plugin name="bradsearch_search_interceptor"
