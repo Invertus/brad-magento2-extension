@@ -87,13 +87,20 @@ ComponentRegistrar::register(
 ### 2. `etc/module.xml`
 
 Declare both dependencies in `<sequence>` so Magento bootstraps them before
-this module's DI is parsed:
+this module's DI is parsed.
+
+Do **not** add `setup_version` — a DI-only bridge has no schema or data to
+upgrade. Declaring it forces Magento to track a `setup_module` row and
+error out on every request until `setup:upgrade` runs, which breaks dev
+environments where the RDBMS version guard blocks `setup:upgrade`. Add
+`setup_version` only if you later introduce `db_schema.xml` or an
+`Install/Upgrade{Schema,Data}` class.
 
 ```xml
 <?xml version="1.0"?>
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
-    <module name="<Vendor>_BradSearchPrice" setup_version="1.0.0">
+    <module name="<Vendor>_BradSearchPrice">
         <sequence>
             <module name="BradSearch_SearchGraphQl"/>
             <!-- Add whatever pricing module you're bridging to here -->
