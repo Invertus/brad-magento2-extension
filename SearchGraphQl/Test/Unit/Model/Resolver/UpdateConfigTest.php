@@ -397,6 +397,117 @@ class UpdateConfigTest extends TestCase
         $this->assertStringContainsString('Duplicate json_merge', $result[1]['message']);
     }
 
+    public function testJsonMergeNormalizesKebabCaseKeysInIncomingPayload(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+
+        $this->scopeConfig->method('getValue')->willReturn(null);
+
+        $savedValue = null;
+        $this->configWriter->method('save')
+            ->willReturnCallback(function ($path, $value) use (&$savedValue) {
+                $savedValue = $value;
+            });
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [[
+                'path' => 'bradsearch_autocomplete/general/config',
+                'json_merge' => '{"api-config":{"url":"https://api.example.com","limit":6},"redirect-url":"/search.html"}',
+            ]]]
+        );
+
+        $this->assertTrue($result[0]['success']);
+
+        $merged = json_decode($savedValue, true);
+        $this->assertArrayHasKey('apiConfig', $merged);
+        $this->assertArrayNotHasKey('api-config', $merged);
+        $this->assertEquals('https://api.example.com', $merged['apiConfig']['url']);
+        $this->assertEquals(6, $merged['apiConfig']['limit']);
+        $this->assertArrayHasKey('redirectUrl', $merged);
+        $this->assertArrayNotHasKey('redirect-url', $merged);
+        $this->assertEquals('/search.html', $merged['redirectUrl']);
+    }
+
+    public function testJsonMergeNormalizesKebabCaseKeysInExistingValue(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+
+        // Legacy data stored with kebab-case key — should migrate on next merge.
+        $existingConfig = json_encode([
+            'api-config' => ['url' => 'https://old.example.com', 'limit' => 6],
+            'options' => ['currency' => 'EUR'],
+        ]);
+
+        $this->scopeConfig->method('getValue')
+            ->with('bradsearch_autocomplete/general/config', ScopeInterface::SCOPE_STORE, self::STORE_ID)
+            ->willReturn($existingConfig);
+
+        $savedValue = null;
+        $this->configWriter->method('save')
+            ->willReturnCallback(function ($path, $value) use (&$savedValue) {
+                $savedValue = $value;
+            });
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [[
+                'path' => 'bradsearch_autocomplete/general/config',
+                'json_merge' => '{"apiConfig":{"limit":8}}',
+            ]]]
+        );
+
+        $this->assertTrue($result[0]['success']);
+
+        $merged = json_decode($savedValue, true);
+        $this->assertArrayNotHasKey('api-config', $merged);
+        $this->assertArrayHasKey('apiConfig', $merged);
+        // Old url preserved from legacy kebab key, new limit from incoming merge.
+        $this->assertEquals('https://old.example.com', $merged['apiConfig']['url']);
+        $this->assertEquals(8, $merged['apiConfig']['limit']);
+        // Unrelated top-level key untouched.
+        $this->assertEquals('EUR', $merged['options']['currency']);
+    }
+
+    public function testJsonMergeDoesNotRecurseIntoNestedKeys(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+
+        $this->scopeConfig->method('getValue')->willReturn(null);
+
+        $savedValue = null;
+        $this->configWriter->method('save')
+            ->willReturnCallback(function ($path, $value) use (&$savedValue) {
+                $savedValue = $value;
+            });
+
+        // Nested key `custom-field` contains a hyphen but is NOT a top-level key,
+        // so it must be preserved verbatim — only the outer `api-config` is rewritten.
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [[
+                'path' => 'bradsearch_autocomplete/general/config',
+                'json_merge' => '{"api-config":{"mapping":{"custom-field":"sku"}}}',
+            ]]]
+        );
+
+        $this->assertTrue($result[0]['success']);
+
+        $merged = json_decode($savedValue, true);
+        $this->assertArrayHasKey('apiConfig', $merged);
+        $this->assertArrayHasKey('custom-field', $merged['apiConfig']['mapping']);
+        $this->assertEquals('sku', $merged['apiConfig']['mapping']['custom-field']);
+    }
+
     public function testValidationRejectsInvalidBoolean(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);

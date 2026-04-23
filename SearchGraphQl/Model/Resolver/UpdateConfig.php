@@ -276,9 +276,46 @@ class UpdateConfig implements ResolverInterface
             }
         }
 
+        $mergeData = is_array($mergeData) ? $this->normalizeTopLevelKeys($mergeData) : $mergeData;
+        $currentData = is_array($currentData) ? $this->normalizeTopLevelKeys($currentData) : $currentData;
+
         $merged = array_replace_recursive($currentData, $mergeData);
 
         return json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Rewrite top-level kebab-case keys (`foo-bar`) to camelCase (`fooBar`).
+     * Only the outermost layer is touched; nested keys are left alone. On a
+     * collision the camelCase form in the source wins, regardless of order.
+     *
+     * @param array $data
+     * @return array
+     */
+    private function normalizeTopLevelKeys(array $data): array
+    {
+        $out = [];
+        foreach ($data as $key => $value) {
+            if (!is_string($key) || strpos($key, '-') === false) {
+                $out[$key] = $value;
+            }
+        }
+        foreach ($data as $key => $value) {
+            if (!is_string($key) || strpos($key, '-') === false) {
+                continue;
+            }
+            $normalized = preg_replace_callback(
+                '/-([a-z])/',
+                function ($m) {
+                    return strtoupper($m[1]);
+                },
+                $key
+            );
+            if (!array_key_exists($normalized, $out)) {
+                $out[$normalized] = $value;
+            }
+        }
+        return $out;
     }
 
     /**
