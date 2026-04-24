@@ -1,0 +1,21 @@
+includes:
+    - phpstan-baseline.neon
+
+parameters:
+    level: 5
+    paths:
+        - Analytics
+        - Autocomplete
+        - ProductFeatures
+        - SearchGraphQl
+    excludePaths:
+        - '*/Test/*'
+        - '*/registration.php'
+        - vendor/*
+    treatPhpDocTypesAsCertain: false
+    parallel:
+        maximumNumberOfProcesses: 4
+        processTimeout: 300.0
+    # Analyze as PHP 8.3 so 8.4 "implicitly nullable" deprecations don't fire;
+    # CI matrix still covers real 8.4 runs.
+    phpVersion: 80300

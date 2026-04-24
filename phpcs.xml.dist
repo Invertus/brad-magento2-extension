@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<ruleset name="BradSearch_MagentoExtension">
+    <description>PHP_CodeSniffer ruleset for bradsearch/magento-extension. Extends Magento2.</description>
+
+    <arg name="basepath" value="."/>
+    <arg name="extensions" value="php,phtml"/>
+    <arg name="colors"/>
+    <arg name="severity" value="10"/>
+
+    <file>Analytics</file>
+    <file>Autocomplete</file>
+    <file>ProductFeatures</file>
+    <file>SearchGraphQl</file>
+
+    <exclude-pattern>*/Test/*</exclude-pattern>
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+
+    <rule ref="Magento2"/>
+
+    <!-- Baselined existing violations. Remove each exclusion as the underlying
+         code is refactored. See issue tracker for per-file remediation plans. -->
+
+    <!-- SearchGraphQl plugins read raw query string params to honour
+         GraphQL nested filter semantics pre-routing. Refactor to use
+         Magento\Framework\App\RequestInterface when reworking these plugins. -->
+    <rule ref="Magento2.Security.Superglobal.SuperglobalUsageError">
+        <exclude-pattern>SearchGraphQl/Plugin/CatalogGraphQl/Model/Resolver/Aggregations\.php</exclude-pattern>
+        <exclude-pattern>SearchGraphQl/Plugin/CatalogGraphQl/Model/Resolver/Products\.php</exclude-pattern>
+    </rule>
+
+    <!-- Immutable value objects in SearchGraphQl/Model/Data are intentionally
+         final (they hold BradSearch API response data; not meant to be
+         overridden by plugins). Allowed by exception. -->
+    <rule ref="Magento2.PHP.FinalImplementation.FoundFinal">
+        <exclude-pattern>SearchGraphQl/Model/Data/*\.php</exclude-pattern>
+    </rule>
+</ruleset>

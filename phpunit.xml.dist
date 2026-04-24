@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.5/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheResultFile=".phpunit.cache/result">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>ProductFeatures/Test/Unit</directory>
+            <directory>SearchGraphQl/Test/Unit</directory>
+        </testsuite>
+    </testsuites>
+    <coverage>
+        <include>
+            <directory>Analytics</directory>
+            <directory>Autocomplete</directory>
+            <directory>ProductFeatures</directory>
+            <directory>SearchGraphQl</directory>
+        </include>
+        <exclude>
+            <directory>*/Test</directory>
+            <file>*/registration.php</file>
+        </exclude>
+    </coverage>
+</phpunit>

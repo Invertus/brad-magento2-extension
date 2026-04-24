@@ -28,6 +28,22 @@
         "magento/module-catalog-graph-ql": "*",
         "magento/module-store-graph-ql": "*"
     },
+    "require-dev": {
+        "squizlabs/php_codesniffer": "^3.7",
+        "magento/magento-coding-standard": "*",
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "phpstan/phpstan": "^1.10",
+        "vimeo/psalm": "^6.0 <6.5",
+        "phpunit/phpunit": "^9.6 || ^10.0",
+        "captainhook/captainhook": "^5.22",
+        "captainhook/plugin-composer": "^5.3"
+    },
+    "repositories": {
+        "magento": {
+            "type": "composer",
+            "url": "https://repo.magento.com/"
+        }
+    },
     "autoload": {
         "files": [
             "Analytics/registration.php",
@@ -41,5 +57,28 @@
             "BradSearch\\ProductFeatures\\": "ProductFeatures/",
             "BradSearch\\SearchGraphQl\\": "SearchGraphQl/"
         }
+    },
+    "scripts": {
+        "post-install-cmd": "@register-phpcs-paths",
+        "post-update-cmd": "@register-phpcs-paths",
+        "register-phpcs-paths": "phpcs --config-set installed_paths vendor/magento/magento-coding-standard,vendor/phpcsstandards/phpcsutils,vendor/magento/php-compatibility-fork",
+        "phpcs": "phpcs",
+        "phpcbf": "phpcbf",
+        "phpstan": "phpstan analyse --memory-limit=1G",
+        "psalm": "psalm",
+        "test": "phpunit",
+        "check": [
+            "@phpcs",
+            "@phpstan",
+            "@psalm"
+        ]
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "captainhook/plugin-composer": true,
+            "magento/composer-dependency-version-audit-plugin": true
+        },
+        "sort-packages": true
     }
 }
