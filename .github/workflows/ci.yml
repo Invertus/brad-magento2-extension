@@ -31,6 +31,17 @@ jobs:
           key: composer-${{ matrix.php }}-${{ hashFiles('composer.json') }}
           restore-keys: composer-${{ matrix.php }}-
 
+      - name: Configure repo.magento.com auth
+        env:
+          MAGENTO_PUBLIC_KEY: ${{ secrets.MAGENTO_PUBLIC_KEY }}
+          MAGENTO_PRIVATE_KEY: ${{ secrets.MAGENTO_PRIVATE_KEY }}
+        run: |
+          if [ -z "$MAGENTO_PUBLIC_KEY" ] || [ -z "$MAGENTO_PRIVATE_KEY" ]; then
+            echo "::error::MAGENTO_PUBLIC_KEY and MAGENTO_PRIVATE_KEY secrets are not set. Add them in Settings → Secrets → Actions."
+            exit 1
+          fi
+          composer config --global --auth http-basic.repo.magento.com "$MAGENTO_PUBLIC_KEY" "$MAGENTO_PRIVATE_KEY"
+
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
