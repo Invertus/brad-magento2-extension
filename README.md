@@ -51,6 +51,22 @@ bin/magento setup:upgrade
 composer remove bradsearch/magento-extension
 ```
 
+## Development
+
+```bash
+composer install              # installs captainhook pre-commit + pre-push hooks
+composer phpcbf               # auto-fix Magento2 coding standard
+composer phpcs                # Magento2 coding standard check
+composer phpstan              # static analysis at level 6
+composer psalm                # static analysis at error level 4
+composer test                 # phpunit unit tests
+composer check                # all of the above
+```
+
+Pre-commit hooks run `phpcbf` + `phpcs` + `phpstan` on staged PHP files.
+Pre-push runs `psalm` + full test suite. CI (GitHub Actions) runs the same
+checks across PHP 7.4 / 8.1 / 8.2 / 8.3 on every PR.
+
 ## License
 
 Apache License 2.0 - see [LICENSE](LICENSE).

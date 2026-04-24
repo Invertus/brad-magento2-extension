@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<files psalm-version="6.4.1@09a200c15910905ddc49e5edd37b73f9c78f7580">
+  <file src="Analytics/Model/EventNotifier.php">
+    <InvalidArgument>
+      <code><![CDATA[CURLOPT_CONNECTTIMEOUT]]></code>
+      <code><![CDATA[CURLOPT_RETURNTRANSFER]]></code>
+      <code><![CDATA[CURLOPT_TIMEOUT]]></code>
+    </InvalidArgument>
+  </file>
+  <file src="ProductFeatures/Model/ProductDataLoader.php">
+    <InvalidPropertyAssignmentValue>
+      <code><![CDATA[$this->queue]]></code>
+    </InvalidPropertyAssignmentValue>
+    <UndefinedClass>
+      <code><![CDATA[$this->collectionFactory]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+    </UndefinedClass>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[$item]]></code>
+      <code><![CDATA[$item]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="ProductFeatures/Model/Resolver/FeatureDefinitions.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="ProductFeatures/Model/Resolver/Features.php">
+    <DuplicateArrayKey>
+      <code><![CDATA["'" => '"']]></code>
+    </DuplicateArrayKey>
+    <FalsableReturnStatement>
+      <code><![CDATA[sprintf($format, $value)]]></code>
+    </FalsableReturnStatement>
+    <InvalidArgument>
+      <code><![CDATA[$value]]></code>
+    </InvalidArgument>
+    <UndefinedClass>
+      <code><![CDATA[$this->groupCollection]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+    </UndefinedClass>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="ProductFeatures/Model/Resolver/FullUrl.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getBaseUrl]]></code>
+      <code><![CDATA[getBaseUrl]]></code>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="ProductFeatures/Model/Resolver/ImageOptimized.php">
+    <UndefinedClass>
+      <code><![CDATA[$this->placeholderFactory]]></code>
+      <code><![CDATA[PlaceholderFactory]]></code>
+      <code><![CDATA[PlaceholderFactory]]></code>
+    </UndefinedClass>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getBaseUrl]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="ProductFeatures/Model/UrlRewriteDataLoader.php">
+    <InvalidArrayAccess>
+      <code><![CDATA[$entry['product_id']]]></code>
+      <code><![CDATA[$entry['store_id']]]></code>
+    </InvalidArrayAccess>
+    <InvalidPropertyAssignmentValue>
+      <code><![CDATA[$this->queue]]></code>
+    </InvalidPropertyAssignmentValue>
+  </file>
+  <file src="SearchGraphQl/Cron/SyncChangedProducts.php">
+    <UndefinedClass>
+      <code><![CDATA[$this->syncStateFactory]]></code>
+      <code><![CDATA[SyncStateFactory]]></code>
+      <code><![CDATA[SyncStateFactory]]></code>
+    </UndefinedClass>
+  </file>
+  <file src="SearchGraphQl/Model/Api/Auth/ApiKeyValidator.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getHeader]]></code>
+      <code><![CDATA[getServer]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="SearchGraphQl/Model/Api/Client.php">
+    <InvalidArgument>
+      <code><![CDATA[CURLOPT_CONNECTTIMEOUT]]></code>
+      <code><![CDATA[CURLOPT_TIMEOUT]]></code>
+    </InvalidArgument>
+  </file>
+  <file src="SearchGraphQl/Model/Price/VanillaMagentoPriceCalculator.php">
+    <InvalidArgument>
+      <code><![CDATA[$product]]></code>
+      <code><![CDATA[$product]]></code>
+      <code><![CDATA[$product]]></code>
+      <code><![CDATA[$product]]></code>
+    </InvalidArgument>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getCurrentCurrencyCode]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="SearchGraphQl/Model/Resolver/BradProducts.php">
+    <TypeDoesNotContainType>
+      <code><![CDATA[0]]></code>
+    </TypeDoesNotContainType>
+    <UndefinedClass>
+      <code><![CDATA[$this->collectionFactory]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+      <code><![CDATA[CollectionFactory]]></code>
+    </UndefinedClass>
+  </file>
+  <file src="SearchGraphQl/Model/Resolver/SortPopularityResolver.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="SearchGraphQl/Model/Resolver/SortPopularitySalesResolver.php">
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="SearchGraphQl/Model/Resolver/UpdateConfig.php">
+    <FalsableReturnStatement>
+      <code><![CDATA[json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]]></code>
+    </FalsableReturnStatement>
+    <UndefinedInterfaceMethod>
+      <code><![CDATA[getExtensionAttributes]]></code>
+    </UndefinedInterfaceMethod>
+  </file>
+  <file src="SearchGraphQl/Model/Sync/WebhookNotifier.php">
+    <InvalidArgument>
+      <code><![CDATA[CURLOPT_CONNECTTIMEOUT]]></code>
+      <code><![CDATA[CURLOPT_RETURNTRANSFER]]></code>
+      <code><![CDATA[CURLOPT_TIMEOUT]]></code>
+    </InvalidArgument>
+  </file>
+  <file src="SearchGraphQl/Plugin/CatalogGraphQl/Model/Resolver/Aggregations.php">
+    <RedundantCondition>
+      <code><![CDATA[$info->operation !== null]]></code>
+      <code><![CDATA[$info->operation->name !== null]]></code>
+      <code><![CDATA[isset($info->operation)]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null &&
+            isset($info->operation->name->value)]]></code>
+    </RedundantCondition>
+  </file>
+  <file src="SearchGraphQl/Plugin/CatalogGraphQl/Model/Resolver/Products.php">
+    <InvalidReturnStatement>
+      <code><![CDATA[$_GET['operationName']]]></code>
+    </InvalidReturnStatement>
+    <InvalidReturnType>
+      <code><![CDATA[string]]></code>
+    </InvalidReturnType>
+    <RedundantCondition>
+      <code><![CDATA[$info->operation !== null]]></code>
+      <code><![CDATA[$info->operation !== null]]></code>
+      <code><![CDATA[$info->operation->name !== null]]></code>
+      <code><![CDATA[$info->operation->name !== null]]></code>
+      <code><![CDATA[isset($info->operation)]]></code>
+      <code><![CDATA[isset($info->operation)]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null &&
+            isset($info->operation->name->value)]]></code>
+      <code><![CDATA[isset($info->operation) &&
+            $info->operation !== null &&
+            isset($info->operation->name) &&
+            $info->operation->name !== null &&
+            isset($info->operation->name->value)]]></code>
+    </RedundantCondition>
+  </file>
+</files>
