@@ -27,13 +27,14 @@ class Aggregations
     private const CONFIG_PATH_ENABLED = 'bradsearch_search/general/enabled';
 
     /**
-     * Operation names that should use BradSearch for aggregations
+     * GraphQL operation names that should fetch aggregations from BradSearch.
      *
-     * Note: ProductSearch is NOT included here because the Products plugin
-     * already handles that operation. We only intercept getProductFiltersBySearch
-     * to avoid duplicate API calls.
+     * `aggregations` is a child resolver of `products`, so the Products plugin
+     * cannot populate it — we have to intercept it here. Products forwards
+     * `search_term` and `filters` via $value so we can reuse them.
      */
     private const SEARCH_OPERATION_NAMES = [
+        'ProductSearch',
         'getProductFiltersBySearch',
     ];
 
