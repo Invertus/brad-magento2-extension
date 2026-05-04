@@ -58,7 +58,7 @@ class AggregationsProvider
     {
         try {
             $response = $this->client->fetchFacets($searchTerm, $filters);
-            return $this->mapFacetsToAggregations($response);
+            return $this->mapFacetsToAggregations($response, $filters);
         } catch (\Throwable $e) {
             $this->logger->error('BradSearch Facets API call failed', [
                 'error' => $e->getMessage(),
@@ -76,17 +76,19 @@ class AggregationsProvider
      * Detects v1 vs v2 response format and delegates accordingly.
      *
      * @param array $response
+     * @param array $appliedFilters Magento filter array — used to keep within-facet
+     *     alternatives visible for facets the user is actively filtering on
      * @return array
      */
-    private function mapFacetsToAggregations(array $response): array
+    private function mapFacetsToAggregations(array $response, array $appliedFilters = []): array
     {
         $facets = $response['facets'] ?? [];
 
         // V1 format: facets.attributes contains grouped facets with {label, values} structure
         if ($this->isV1Response($facets)) {
-            $aggregations = $this->mapV1Facets($facets);
+            $aggregations = $this->mapV1Facets($facets, $appliedFilters);
         } else {
-            $aggregations = $this->mapV2Facets($facets);
+            $aggregations = $this->mapV2Facets($facets, $appliedFilters);
         }
 
         $this->logger->debug('Mapped facets to aggregations', [
@@ -118,9 +120,10 @@ class AggregationsProvider
      * Map v1 response format: facets.attributes.{code}.{label, values}
      *
      * @param array $facets
+     * @param array $appliedFilters
      * @return array
      */
-    private function mapV1Facets(array $facets): array
+    private function mapV1Facets(array $facets, array $appliedFilters = []): array
     {
         $aggregations = [];
         $attributes = $facets['attributes'] ?? [];
@@ -128,7 +131,12 @@ class AggregationsProvider
         foreach ($attributes as $attributeCode => $facetData) {
             $label = $facetData['label'] ?? $attributeCode;
             $values = $facetData['values'] ?? [];
-            $options = $this->mapFacetOptions($values);
+            $isFilteredFacet = array_key_exists($attributeCode, $appliedFilters);
+            $options = $this->mapFacetOptions($values, $isFilteredFacet);
+
+            if (empty($options)) {
+                continue;
+            }
 
             $aggregations[$attributeCode] = [
                 'attribute_code' => $attributeCode,
@@ -152,9 +160,10 @@ class AggregationsProvider
      * }
      *
      * @param array $facets
+     * @param array $appliedFilters
      * @return array
      */
-    private function mapV2Facets(array $facets): array
+    private function mapV2Facets(array $facets, array $appliedFilters = []): array
     {
         $aggregations = [];
 
@@ -177,7 +186,11 @@ class AggregationsProvider
                     }
                     $label = $entry['label'] ?? $code;
                     $values = $entry['values'] ?? [];
-                    $options = $this->mapFacetOptions($values);
+                    $isFilteredFacet = array_key_exists($code, $appliedFilters);
+                    $options = $this->mapFacetOptions($values, $isFilteredFacet);
+                    if (empty($options)) {
+                        continue;
+                    }
                     $aggregations[$code] = [
                         'attribute_code' => $code,
                         'label' => $label,
@@ -189,7 +202,8 @@ class AggregationsProvider
             }
 
             // Top-level term facets (brand, categories, etc.)
-            $options = $this->mapFacetOptions($facetData);
+            $isFilteredFacet = array_key_exists($facetName, $appliedFilters);
+            $options = $this->mapFacetOptions($facetData, $isFilteredFacet);
             if (!empty($options)) {
                 $aggregations[$facetName] = [
                     'attribute_code' => $facetName,
@@ -204,16 +218,33 @@ class AggregationsProvider
     }
 
     /**
-     * Map facet value arrays to Magento aggregation option format
+     * Map facet value arrays to Magento aggregation option format.
+     *
+     * For facets the user is NOT currently filtering on, drop options that
+     * BradSearch reports as `enabled: false` — they exist in the global
+     * universe but don't match the active filter set, and should disappear
+     * from the sidebar (matches category-page UX, where count:0 options
+     * are filtered out server-side).
+     *
+     * For facets the user IS currently filtering on, keep all values so
+     * within-facet alternatives stay visible (Brand=Nike + Brand=Adidas
+     * multi-select). BradSearch marks the unselected siblings as
+     * `enabled: false`, but we preserve them here.
      *
      * @param array $values Array of {value, count} or {value, count, enabled}
+     * @param bool $isFilteredFacet True if this facet has an active user filter
      * @return array
      */
-    private function mapFacetOptions(array $values): array
+    private function mapFacetOptions(array $values, bool $isFilteredFacet = false): array
     {
         $options = [];
         foreach ($values as $facetOption) {
             if (!is_array($facetOption)) {
+                continue;
+            }
+            if (!$isFilteredFacet
+                && array_key_exists('enabled', $facetOption)
+                && $facetOption['enabled'] === false) {
                 continue;
             }
             $value = $facetOption['value'] ?? '';

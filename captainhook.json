@@ -22,15 +22,6 @@
                         "args": ["php"]
                     }
                 ]
-            },
-            {
-                "action": "vendor/bin/phpstan analyse {$STAGED_FILES|of-type:php}",
-                "conditions": [
-                    {
-                        "exec": "\\CaptainHook\\App\\Hook\\Condition\\FileStaged\\OfType",
-                        "args": ["php"]
-                    }
-                ]
             }
         ]
     },
