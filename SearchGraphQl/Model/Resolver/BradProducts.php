@@ -39,6 +39,7 @@ class BradProducts implements ResolverInterface
         'short_description',
         'description',
         'price',
+        'price_type',
         'special_price',
         'special_from_date',
         'special_to_date',
