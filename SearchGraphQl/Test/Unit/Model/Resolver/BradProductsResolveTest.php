@@ -20,6 +20,7 @@ use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Api\Data\StoreInterface;
 use Magento\Store\Model\StoreManagerInterface;
 use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use RuntimeException;
@@ -32,25 +33,25 @@ class BradProductsResolveTest extends TestCase
 {
     private BradProducts $resolver;
     private Collection&MockObject $collection;
-    private PriceCalculatorInterface&MockObject $priceCalculator;
+    private PriceCalculatorInterface&Stub $priceCalculator;
     private LoggerInterface&MockObject $logger;
 
     protected function setUp(): void
     {
         $this->collection = $this->createMock(Collection::class);
-        $collectionFactory = $this->createMock(CollectionFactory::class);
+        $collectionFactory = $this->createStub(CollectionFactory::class);
         $collectionFactory->method('create')->willReturn($this->collection);
 
-        $store = $this->createMock(StoreInterface::class);
+        $store = $this->createStub(StoreInterface::class);
         $store->method('getId')->willReturn(1);
-        $storeManager = $this->createMock(StoreManagerInterface::class);
+        $storeManager = $this->createStub(StoreManagerInterface::class);
         $storeManager->method('getStore')->willReturn($store);
 
-        $apiKeyValidator = $this->createMock(ApiKeyValidator::class);
+        $apiKeyValidator = $this->createStub(ApiKeyValidator::class);
         $apiKeyValidator->method('isValidRequest')->willReturn(true);
 
-        $this->priceCalculator = $this->createMock(PriceCalculatorInterface::class);
-        $priceMapper = $this->createMock(CalculatedPriceMapper::class);
+        $this->priceCalculator = $this->createStub(PriceCalculatorInterface::class);
+        $priceMapper = $this->createStub(CalculatedPriceMapper::class);
         $priceMapper->method('toGraphQlArray')->willReturn(['final_price' => ['value' => 1.0]]);
 
         $this->logger = $this->createMock(LoggerInterface::class);
@@ -150,9 +151,9 @@ class BradProductsResolveTest extends TestCase
     private function resolve(?array $args = null): array
     {
         return $this->resolver->resolve(
-            $this->createMock(Field::class),
+            $this->createStub(Field::class),
             null,
-            $this->createMock(ResolveInfo::class),
+            $this->createStub(ResolveInfo::class),
             null,
             $args ?? ['pageSize' => 300, 'currentPage' => 0]
         );
@@ -167,9 +168,9 @@ class BradProductsResolveTest extends TestCase
         $this->collection->method('getSize')->willReturn(count($products));
     }
 
-    private function product(int $entityId): Product&MockObject
+    private function product(int $entityId): Product&Stub
     {
-        $product = $this->createMock(Product::class);
+        $product = $this->createStub(Product::class);
         $product->method('getId')->willReturn($entityId);
         $product->method('getData')->willReturn(['entity_id' => $entityId, 'sku' => "sku-{$entityId}"]);
 
