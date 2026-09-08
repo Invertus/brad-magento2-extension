@@ -9,8 +9,10 @@ namespace BradSearch\SearchGraphQl\Model\Resolver;
 use BradSearch\SearchGraphQl\Api\PriceCalculatorInterface;
 use BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator;
 use BradSearch\SearchGraphQl\Model\Price\CalculatedPriceMapper;
+use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\Product\Attribute\Source\Status;
 use Magento\Catalog\Model\Product\Visibility;
+use Magento\Catalog\Model\ResourceModel\Product\Collection;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
@@ -18,11 +20,13 @@ use Magento\Framework\GraphQl\Exception\GraphQlInputException;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Model\StoreManagerInterface;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Resolver for bradProducts query — direct MySQL product listing for BradSearch sync.
  *
- * Bypasses ElasticSearch entirely. No stock filters applied.
+ * Bypasses ElasticSearch entirely. Applies no stock filter of its own.
  * Requires valid X-BradSearch-Api-Key header.
  */
 class BradProducts implements ResolverInterface
@@ -73,24 +77,32 @@ class BradProducts implements ResolverInterface
     private CalculatedPriceMapper $priceMapper;
 
     /**
+     * @var LoggerInterface
+     */
+    private LoggerInterface $logger;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param CollectionFactory $collectionFactory
      * @param StoreManagerInterface $storeManager
      * @param PriceCalculatorInterface $priceCalculator
      * @param CalculatedPriceMapper $priceMapper
+     * @param LoggerInterface $logger
      */
     public function __construct(
         ApiKeyValidator $apiKeyValidator,
         CollectionFactory $collectionFactory,
         StoreManagerInterface $storeManager,
         PriceCalculatorInterface $priceCalculator,
-        CalculatedPriceMapper $priceMapper
+        CalculatedPriceMapper $priceMapper,
+        LoggerInterface $logger
     ) {
         $this->apiKeyValidator = $apiKeyValidator;
         $this->collectionFactory = $collectionFactory;
         $this->storeManager = $storeManager;
         $this->priceCalculator = $priceCalculator;
         $this->priceMapper = $priceMapper;
+        $this->logger = $logger;
     }
 
     /**
@@ -136,34 +148,67 @@ class BradProducts implements ResolverInterface
             $collection->addFieldToFilter('entity_id', ['in' => $entityIds]);
         }
 
-        $totalCount = $collection->getSize();
+        // The sync fetches pages over hours and treats a product it never saw as removed from the
+        // shop. Without an ORDER BY, MySQL returns offset pages in plan order, so a product can move
+        // between pages mid-run and never be seen. entity_id is immutable, so its order is stable.
+        $collection->addAttributeToSort('entity_id', Collection::SORT_ORDER_ASC);
 
         $collection->setPageSize($pageSize);
         $collection->setCurPage($currentPage + 1);
 
         $items = [];
+        $skipped = 0;
         foreach ($collection as $product) {
-            $productData = $product->getData();
-            $productData['model'] = $product;
-
-            $calculated = $this->priceCalculator->calculate($product, $storeId);
-            $productData['calculated_price'] = $calculated !== null
-                ? $this->priceMapper->toGraphQlArray($calculated)
-                : null;
-
-            $items[] = $productData;
+            try {
+                $items[] = $this->buildItem($product, $storeId);
+            } catch (Throwable $e) {
+                // One product that cannot be priced must not void the other 299 on the page. The
+                // sync reads skipped_count, so the product is accounted for rather than read as a
+                // hole in the enumeration.
+                $skipped++;
+                $this->logger->error('bradProducts: product left out of the page because it could not be built', [
+                    'entity_id' => $product->getId(),
+                    'store_id' => $storeId,
+                    'error' => $e->getMessage(),
+                    'exception' => get_class($e),
+                ]);
+            }
         }
+
+        // Read after the page has loaded. Plugins that filter the collection on load (stock, third
+        // party) have applied by then, so the count matches what the pages deliver. Counted before
+        // load it overstated the catalog, and the sync fetched empty pages past the real end.
+        $totalCount = $collection->getSize();
 
         $totalPages = $pageSize > 0 ? (int)ceil($totalCount / $pageSize) : 0;
 
         return [
             'total_count' => $totalCount,
             'items' => $items,
+            'skipped_count' => $skipped,
             'page_info' => [
                 'page_size' => $pageSize,
                 'current_page' => $currentPage,
                 'total_pages' => $totalPages,
             ],
         ];
+    }
+
+    /**
+     * @param Product $product
+     * @param int $storeId
+     * @return array
+     */
+    private function buildItem(Product $product, int $storeId): array
+    {
+        $productData = $product->getData();
+        $productData['model'] = $product;
+
+        $calculated = $this->priceCalculator->calculate($product, $storeId);
+        $productData['calculated_price'] = $calculated !== null
+            ? $this->priceMapper->toGraphQlArray($calculated)
+            : null;
+
+        return $productData;
     }
 }

@@ -93,6 +93,7 @@
     <type name="BradSearch\SearchGraphQl\Model\Resolver\BradProducts">
         <arguments>
             <argument name="apiKeyValidator" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
