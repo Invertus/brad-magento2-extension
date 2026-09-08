@@ -159,6 +159,8 @@ class BradProducts implements ResolverInterface
         $items = [];
         $skipped = 0;
         foreach ($collection as $product) {
+            $entityId = $product->getId();
+
             try {
                 $items[] = $this->buildItem($product, $storeId);
             } catch (Throwable $e) {
@@ -167,7 +169,7 @@ class BradProducts implements ResolverInterface
                 // hole in the enumeration.
                 $skipped++;
                 $this->logger->error('bradProducts: product left out of the page because it could not be built', [
-                    'entity_id' => $product->getId(),
+                    'entity_id' => $entityId,
                     'store_id' => $storeId,
                     'error' => $e->getMessage(),
                     'exception' => get_class($e),
