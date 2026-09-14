@@ -69,23 +69,13 @@ class ProductsProvider
             'sort' => $sort,
         ]);
 
-        try {
-            $apiResponse = $this->apiClient->search($searchTerm, $pageSize, $currentPage, $filters, $sort);
+        $apiResponse = $this->apiClient->search($searchTerm, $pageSize, $currentPage, $filters, $sort);
 
-            $this->logger->debug('API response received', [
-                'total' => $apiResponse['total'] ?? 0,
-                'documents_count' => count($apiResponse['documents'] ?? []),
-            ]);
+        $this->logger->debug('API response received', [
+            'total' => $apiResponse['total'] ?? 0,
+            'documents_count' => count($apiResponse['documents'] ?? []),
+        ]);
 
-            return $this->responseMapper->map($apiResponse, $pageSize, $currentPage);
-        } catch (\Throwable $e) {
-            $this->logger->error('BradSearch API call failed', [
-                'error' => $e->getMessage(),
-                'search_term' => $searchTerm,
-            ]);
-
-            // Re-throw exception to allow Plugin to fallback to default search
-            throw $e;
-        }
+        return $this->responseMapper->map($apiResponse, $pageSize, $currentPage);
     }
 }

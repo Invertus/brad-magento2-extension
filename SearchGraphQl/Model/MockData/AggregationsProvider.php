@@ -56,18 +56,8 @@ class AggregationsProvider
      */
     public function getAggregations(string $searchTerm, array $filters = []): array
     {
-        try {
-            $response = $this->client->fetchFacets($searchTerm, $filters);
-            return $this->mapFacetsToAggregations($response, $filters);
-        } catch (\Throwable $e) {
-            $this->logger->error('BradSearch Facets API call failed', [
-                'error' => $e->getMessage(),
-                'search_term' => $searchTerm,
-            ]);
-
-            // Re-throw exception to allow Plugin to fallback to default aggregations
-            throw $e;
-        }
+        $response = $this->client->fetchFacets($searchTerm, $filters);
+        return $this->mapFacetsToAggregations($response, $filters);
     }
 
     /**

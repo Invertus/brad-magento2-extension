@@ -123,6 +123,12 @@
         </arguments>
     </type>
 
+    <type name="BradSearch\SearchGraphQl\Model\MockData\AggregationsProvider">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
     <!-- Virtual logger that writes to bradsearch.log (unified log file) -->
     <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Magento\Framework\Logger\Monolog">
         <arguments>

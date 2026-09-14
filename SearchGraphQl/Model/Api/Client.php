@@ -26,6 +26,9 @@ class Client
 
     private const EXCLUDED_FILTERS = ['show_out_of_stock', 'category_id', 'category_uid'];
 
+    private const PACKAGE_NAME = 'bradsearch/magento-extension';
+    private const USER_AGENT_PRODUCT = 'BradSearch-Magento2';
+
     /**
      * @var Curl
      */
@@ -82,7 +85,6 @@ class Client
         $token = $this->getApiToken($storeId);
 
         if (empty($apiUrl) || empty($token)) {
-            $this->logger->error('API URL or token not configured', ['store_id' => $storeId]);
             throw new \Exception('BradSearch API URL or token not configured');
         }
 
@@ -97,36 +99,28 @@ class Client
             'current_page' => $currentPage,
         ]);
 
-        try {
-            $this->setupCurl();
-            $this->curl->get($url);
+        $this->setupCurl();
+        $this->curl->get($url);
 
-            $statusCode = $this->curl->getStatus();
-            $body = $this->curl->getBody();
+        $statusCode = $this->curl->getStatus();
+        $body = $this->curl->getBody();
 
-            $this->logger->debug('API response received', [
-                'status_code' => $statusCode,
-                'body_length' => strlen($body),
-            ]);
+        $this->logger->debug('API response received', [
+            'status_code' => $statusCode,
+            'body_length' => strlen($body),
+        ]);
 
-            if ($statusCode !== 200) {
-                throw new \Exception("BradSearch API returned status code: $statusCode");
-            }
-
-            $data = json_decode($body, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Failed to decode BradSearch API response: ' . json_last_error_msg());
-            }
-
-            return $data;
-        } catch (\Throwable $e) {
-            $this->logger->error('API request failed', [
-                'error' => $e->getMessage(),
-                'search_term' => $searchTerm,
-            ]);
-            throw $e;
+        if ($statusCode !== 200) {
+            throw new \Exception("BradSearch API returned status code: $statusCode");
         }
+
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception('Failed to decode BradSearch API response: ' . json_last_error_msg());
+        }
+
+        return $data;
     }
 
     /**
@@ -144,7 +138,6 @@ class Client
         $token = $this->getApiToken($storeId);
 
         if (empty($apiUrl) || empty($token)) {
-            $this->logger->error('Facets API URL or token not configured', ['store_id' => $storeId]);
             throw new \Exception('BradSearch Facets API URL or token not configured');
         }
 
@@ -157,36 +150,28 @@ class Client
             'search_term' => $searchTerm,
         ]);
 
-        try {
-            $this->setupCurl();
-            $this->curl->get($url);
+        $this->setupCurl();
+        $this->curl->get($url);
 
-            $statusCode = $this->curl->getStatus();
-            $body = $this->curl->getBody();
+        $statusCode = $this->curl->getStatus();
+        $body = $this->curl->getBody();
 
-            $this->logger->debug('Facets API response received', [
-                'status_code' => $statusCode,
-                'body_length' => strlen($body),
-            ]);
+        $this->logger->debug('Facets API response received', [
+            'status_code' => $statusCode,
+            'body_length' => strlen($body),
+        ]);
 
-            if ($statusCode !== 200) {
-                throw new \Exception("BradSearch Facets API returned status code: $statusCode");
-            }
-
-            $data = json_decode($body, true);
-
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \Exception('Failed to decode BradSearch Facets API response: ' . json_last_error_msg());
-            }
-
-            return $data;
-        } catch (\Throwable $e) {
-            $this->logger->error('Facets API request failed', [
-                'error' => $e->getMessage(),
-                'search_term' => $searchTerm,
-            ]);
-            throw $e;
+        if ($statusCode !== 200) {
+            throw new \Exception("BradSearch Facets API returned status code: $statusCode");
         }
+
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception('Failed to decode BradSearch Facets API response: ' . json_last_error_msg());
+        }
+
+        return $data;
     }
 
     /**
@@ -369,8 +354,28 @@ class Client
 
         $this->curl->addHeader('Accept', 'application/json');
         $this->curl->addHeader('Accept-Language', $locale);
+        $this->curl->addHeader('User-Agent', $this->getUserAgent());
         $this->curl->setOption(CURLOPT_TIMEOUT, 10);
         $this->curl->setOption(CURLOPT_CONNECTTIMEOUT, 5);
+    }
+
+    /**
+     * Identifies the module to the API and to edge bot filters
+     *
+     * @return string
+     */
+    private function getUserAgent(): string
+    {
+        $version = null;
+        try {
+            if (class_exists(\Composer\InstalledVersions::class)) {
+                $version = \Composer\InstalledVersions::getPrettyVersion(self::PACKAGE_NAME);
+            }
+        } catch (\Throwable $e) {
+            $version = null;
+        }
+
+        return self::USER_AGENT_PRODUCT . '/' . ltrim($version ?: 'dev', 'v');
     }
 
     /**

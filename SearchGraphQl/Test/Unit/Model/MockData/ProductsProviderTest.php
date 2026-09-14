@@ -95,76 +95,22 @@ class ProductsProviderTest extends TestCase
     }
 
     /**
-     * Test API failure returns empty results
+     * Test API failure is passed up to the plugin, which owns the single error line
      */
-    public function testGetSearchResultsApiFailure(): void
+    public function testApiFailureIsRethrownWithoutLogging(): void
     {
-        $searchTerm = 'laptop';
-        $pageSize = 18;
-        $currentPage = 1;
-
-        $emptyResponse = [
-            'items' => [],
-            'total_count' => 0,
-            'page_info' => [
-                'total_pages' => 0,
-                'current_page' => 1,
-                'page_size' => 18,
-            ],
-        ];
-
-        // API client throws exception
         $this->clientMock
             ->expects($this->once())
             ->method('search')
             ->willThrowException(new \Exception('API connection timeout'));
 
-        // Expect empty results to be returned
-        $this->responseMapperMock
-            ->expects($this->once())
-            ->method('getEmptyResults')
-            ->with($pageSize, $currentPage)
-            ->willReturn($emptyResponse);
+        $this->responseMapperMock->expects($this->never())->method('map');
+        $this->loggerMock->expects($this->never())->method('error');
 
-        // Response mapper's map() should NOT be called
-        $this->responseMapperMock
-            ->expects($this->never())
-            ->method('map');
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('API connection timeout');
 
-        $result = $this->subject->getSearchResults($searchTerm, $pageSize, $currentPage);
-
-        $this->assertSame($emptyResponse, $result);
-        $this->assertSame(0, $result['total_count']);
-    }
-
-    /**
-     * Test that exception is caught and logged
-     */
-    public function testGetSearchResultsLogsException(): void
-    {
-        $searchTerm = 'test';
-        $exception = new \Exception('API Error');
-
-        $this->clientMock
-            ->expects($this->once())
-            ->method('search')
-            ->willThrowException($exception);
-
-        $this->responseMapperMock
-            ->expects($this->once())
-            ->method('getEmptyResults')
-            ->willReturn(['items' => [], 'total_count' => 0]);
-
-        // Expect error to be logged
-        $this->loggerMock
-            ->expects($this->once())
-            ->method('error')
-            ->with(
-                'API call failed, returning empty results',
-                ['error' => 'API Error']
-            );
-
-        $this->subject->getSearchResults($searchTerm);
+        $this->subject->getSearchResults('laptop');
     }
 
     /**

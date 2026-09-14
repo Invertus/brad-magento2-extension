@@ -7,6 +7,7 @@ declare(strict_types=1);
 namespace BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver;
 
 use BradSearch\SearchGraphQl\Model\MockData\ProductsProvider;
+use BradSearch\SearchGraphQl\Model\SearchTermFilter;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
@@ -52,21 +53,29 @@ class Products
     private LoggerInterface $logger;
 
     /**
+     * @var SearchTermFilter
+     */
+    private SearchTermFilter $searchTermFilter;
+
+    /**
      * @param ScopeConfigInterface $scopeConfig
      * @param StoreManagerInterface $storeManager
      * @param ProductsProvider $productsProvider
      * @param LoggerInterface $logger
+     * @param SearchTermFilter $searchTermFilter
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
         ProductsProvider $productsProvider,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        SearchTermFilter $searchTermFilter
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->productsProvider = $productsProvider;
         $this->logger = $logger;
+        $this->searchTermFilter = $searchTermFilter;
     }
 
     /**
@@ -87,8 +96,8 @@ class Products
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ): array {
         $operationName = $this->getOperationName($info);
         $hasSearch = isset($args['search']) && !empty($args['search']);
@@ -114,6 +123,10 @@ class Products
         }
 
         $searchTerm = $args['search'] ?? '';
+
+        if ($this->searchTermFilter->isJunk($searchTerm)) {
+            return $proceed($field, $context, $info, $value, $args);
+        }
 
         // For filter/aggregation queries, return minimal result to bypass ElasticSuite.
         // The Aggregations child resolver will handle fetching facets from BradSearch.
@@ -163,7 +176,6 @@ class Products
             $this->logger->error('BradSearch API failed, falling back to default search', [
                 'error' => $e->getMessage(),
                 'search_term' => $searchTerm,
-                'trace' => $e->getTraceAsString(),
             ]);
 
             // Fallback to default Magento/ElasticSuite search
