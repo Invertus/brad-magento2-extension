@@ -12,7 +12,8 @@ namespace BradSearch\SearchGraphQl\Model;
 class SearchTermFilter
 {
     private const JUNK_PATTERNS = [
-        '~\.(x?html?|php\d?|aspx?|jsp|cgi|xml|json|js|css|png|jpe?g|gif|svg|webp|ico|pdf|txt|zip)$~i',
+        '~\.x?html?(?=[?#/]|$)~i',
+        '~\.(php\d?|aspx?|jsp|cgi|xml|json|js|css|png|jpe?g|gif|svg|webp|ico|pdf|txt|zip)$~i',
         '~://~',
         '~(^|[^a-z0-9])www\.~i',
     ];

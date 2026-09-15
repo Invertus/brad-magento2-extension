@@ -125,6 +125,10 @@ class Products
         $searchTerm = $args['search'] ?? '';
 
         if ($this->searchTermFilter->isJunk($searchTerm)) {
+            $this->logger->debug('Skipping BradSearch: search term looks like a URL', [
+                'search_term' => $searchTerm,
+            ]);
+
             return $proceed($field, $context, $info, $value, $args);
         }
 
