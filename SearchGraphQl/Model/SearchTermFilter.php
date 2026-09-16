@@ -13,7 +13,7 @@ class SearchTermFilter
 {
     private const JUNK_PATTERNS = [
         '~\.x?html?(?=[?#/]|$)~i',
-        '~\.(php\d?|aspx?|jsp|cgi|xml|json|js|css|png|jpe?g|gif|svg|webp|ico|pdf|txt|zip)$~i',
+        '~\.(php\d?|aspx?|jsp|cgi|xml|png|jpe?g|gif|svg|webp|ico|pdf)$~i',
         '~://~',
         '~(^|[^a-z0-9])www\.~i',
     ];

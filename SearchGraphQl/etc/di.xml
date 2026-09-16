@@ -27,14 +27,6 @@
                 type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products"/>
     </type>
 
-    <!-- ProductsProvider with BradSearch API dependencies -->
-    <type name="BradSearch\SearchGraphQl\Model\MockData\ProductsProvider">
-        <arguments>
-            <argument name="apiClient" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Client</argument>
-            <argument name="responseMapper" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\ResponseMapper</argument>
-        </arguments>
-    </type>
-
     <!-- Plugin to intercept aggregations and return mock data when BradSearch enabled -->
     <type name="Magento\CatalogGraphQl\Model\Resolver\Aggregations">
         <plugin name="bradsearch_aggregations_interceptor"

@@ -59,6 +59,9 @@ class SearchTermFilterTest extends TestCase
             'spaces only' => ['   '],
             'html as a word' => ['html book'],
             'www as a word' => ['wwwx'],
+            'js in product name' => ['Node.js'],
+            'css in product name' => ['bootstrap.css'],
+            'txt file name' => ['readme.txt'],
         ];
     }
 
