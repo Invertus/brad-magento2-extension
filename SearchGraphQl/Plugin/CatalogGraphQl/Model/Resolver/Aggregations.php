@@ -7,6 +7,7 @@ declare(strict_types=1);
 namespace BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver;
 
 use BradSearch\SearchGraphQl\Model\MockData\AggregationsProvider;
+use BradSearch\SearchGraphQl\Model\SearchTermFilter;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
@@ -59,21 +60,29 @@ class Aggregations
     private LoggerInterface $logger;
 
     /**
+     * @var SearchTermFilter
+     */
+    private SearchTermFilter $searchTermFilter;
+
+    /**
      * @param ScopeConfigInterface $scopeConfig
      * @param StoreManagerInterface $storeManager
      * @param AggregationsProvider $aggregationsProvider
      * @param LoggerInterface $logger
+     * @param SearchTermFilter $searchTermFilter
      */
     public function __construct(
         ScopeConfigInterface $scopeConfig,
         StoreManagerInterface $storeManager,
         AggregationsProvider $aggregationsProvider,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        SearchTermFilter $searchTermFilter
     ) {
         $this->scopeConfig = $scopeConfig;
         $this->storeManager = $storeManager;
         $this->aggregationsProvider = $aggregationsProvider;
         $this->logger = $logger;
+        $this->searchTermFilter = $searchTermFilter;
     }
 
     /**
@@ -94,8 +103,8 @@ class Aggregations
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         $operationName = $info->operation->name->value ?? $_GET['operationName'] ?? 'NONE';
 
@@ -120,6 +129,14 @@ class Aggregations
         if ($isEnabled && $isSearch) {
             $searchTerm = $this->extractSearchTerm($value, $args, $info);
             $filters = $this->extractFilters($value, $args, $info);
+
+            if ($this->searchTermFilter->isJunk($searchTerm)) {
+                $this->logger->debug('Skipping BradSearch: search term looks like a URL', [
+                    'search_term' => $searchTerm,
+                ]);
+
+                return $proceed($field, $context, $info, $value, $args);
+            }
 
             $this->logger->debug('Intercepting aggregations for BradSearch', [
                 'search_term' => $searchTerm,

@@ -37,7 +37,7 @@ class ClientTest extends TestCase
         $this->setupConfigMocks('https://api.example.com/search', 'test-token-123');
 
         // Mock successful curl response
-        $this->curlMock->expects($this->exactly(2))->method('addHeader'); // Accept and Accept-Language
+        $this->curlMock->expects($this->exactly(3))->method('addHeader'); // Accept, Accept-Language, User-Agent
         $this->curlMock->expects($this->exactly(2))->method('setOption'); // TIMEOUT and CONNECTTIMEOUT
         $this->curlMock->expects($this->once())->method('get');
         $this->curlMock->expects($this->once())->method('getStatus')->willReturn(200);
@@ -46,6 +46,46 @@ class ClientTest extends TestCase
         $result = $this->subject->search($searchTerm, $pageSize, $currentPage);
 
         $this->assertSame($apiResponse, $result);
+    }
+
+    /**
+     * Test the module identifies itself so edge bot filters do not treat it as an anonymous crawler
+     */
+    public function testSearchSendsUserAgentHeader(): void
+    {
+        $this->setupConfigMocks('https://api.example.com/search', 'test-token');
+
+        $headers = [];
+        $this->curlMock->method('addHeader')->willReturnCallback(
+            function (string $name, string $value) use (&$headers) {
+                $headers[$name] = $value;
+            }
+        );
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn('{}');
+
+        $this->subject->search('test');
+
+        $this->assertArrayHasKey('User-Agent', $headers);
+        $this->assertMatchesRegularExpression('~^BradSearch-Magento2/\S+$~', $headers['User-Agent']);
+    }
+
+    /**
+     * Test a failed request is not logged here; the plugin owns the single error line
+     */
+    public function testSearchFailureIsNotLoggedAsError(): void
+    {
+        $this->setupConfigMocks('https://api.example.com/search', 'test-token');
+
+        $this->curlMock->method('getStatus')->willReturn(403);
+        $this->curlMock->method('getBody')->willReturn('Forbidden');
+
+        $this->loggerMock->expects($this->never())->method('error');
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage('BradSearch API returned status code: 403');
+
+        $this->subject->search('test');
     }
 
     /**
