@@ -12,6 +12,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
 use Magento\Framework\GraphQl\Exception\GraphQlInputException;
@@ -47,6 +48,9 @@ class UpdateConfigTest extends TestCase
     /** @var LoggerInterface|MockObject */
     private $logger;
 
+    /** @var EncryptorInterface|MockObject */
+    private $encryptor;
+
     /** @var Field|MockObject */
     private $field;
 
@@ -64,6 +68,13 @@ class UpdateConfigTest extends TestCase
         $this->cacheTypeList = $this->createMock(TypeListInterface::class);
         $this->scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $this->logger = $this->createMock(LoggerInterface::class);
+        $this->encryptor = $this->createMock(EncryptorInterface::class);
+        $this->encryptor->method('encrypt')->willReturnCallback(function ($value) {
+            return 'enc:' . $value;
+        });
+        $this->encryptor->method('decrypt')->willReturnCallback(function ($value) {
+            return strpos($value, 'enc:') === 0 ? substr($value, 4) : '';
+        });
         $this->field = $this->createMock(Field::class);
         $this->resolveInfo = $this->createMock(ResolveInfo::class);
 
@@ -88,7 +99,8 @@ class UpdateConfigTest extends TestCase
             $this->reinitableConfig,
             $this->cacheTypeList,
             $this->scopeConfig,
-            $this->logger
+            $this->logger,
+            $this->encryptor
         );
     }
 
@@ -233,6 +245,69 @@ class UpdateConfigTest extends TestCase
         );
 
         $this->assertTrue($result[0]['success']);
+    }
+
+    public function testStoresThePrivateApiKeyEncrypted(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+
+        $this->configWriter->expects($this->once())
+            ->method('save')
+            ->with(
+                'bradsearch_search/private_endpoint/api_key',
+                'enc:rotated.private.key',
+                ScopeInterface::SCOPE_STORES,
+                self::STORE_ID
+            );
+
+        $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => '  rotated.private.key  '],
+            ]]
+        );
+    }
+
+    public function testDoesNotRewriteAPrivateApiKeyTheStoreAlreadyHas(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->scopeConfig->method('getValue')->willReturn('enc:rotated.private.key');
+        $this->configWriter->expects($this->never())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => 'rotated.private.key'],
+            ]]
+        );
+
+        $this->assertFalse($result[0]['success']);
+        $this->assertSame('No change.', $result[0]['message']);
+    }
+
+    public function testRefusesAJsonMergeOnThePrivateApiKey(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->configWriter->expects($this->never())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'json_merge' => '{"a":"b"}'],
+            ]]
+        );
+
+        $this->assertFalse($result[0]['success']);
+        $this->assertStringContainsString('json_merge is not supported', $result[0]['message']);
     }
 
     public function testRefusesToClearThePrivateApiKey(): void

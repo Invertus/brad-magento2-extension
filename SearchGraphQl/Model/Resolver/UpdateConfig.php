@@ -12,6 +12,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
 use Magento\Framework\GraphQl\Exception\GraphQlInputException;
@@ -106,12 +107,18 @@ class UpdateConfig implements ResolverInterface
     private LoggerInterface $logger;
 
     /**
+     * @var EncryptorInterface
+     */
+    private EncryptorInterface $encryptor;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param WriterInterface $configWriter
      * @param ReinitableConfigInterface $reinitableConfig
      * @param TypeListInterface $cacheTypeList
      * @param ScopeConfigInterface $scopeConfig
      * @param LoggerInterface $logger
+     * @param EncryptorInterface $encryptor
      */
     public function __construct(
         ApiKeyValidator $apiKeyValidator,
@@ -119,7 +126,8 @@ class UpdateConfig implements ResolverInterface
         ReinitableConfigInterface $reinitableConfig,
         TypeListInterface $cacheTypeList,
         ScopeConfigInterface $scopeConfig,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        EncryptorInterface $encryptor
     ) {
         $this->apiKeyValidator = $apiKeyValidator;
         $this->configWriter = $configWriter;
@@ -127,6 +135,7 @@ class UpdateConfig implements ResolverInterface
         $this->cacheTypeList = $cacheTypeList;
         $this->scopeConfig = $scopeConfig;
         $this->logger = $logger;
+        $this->encryptor = $encryptor;
     }
 
     /**
@@ -215,6 +224,10 @@ class UpdateConfig implements ResolverInterface
             return $this->error($path, 'Must specify either value or json_merge.');
         }
 
+        if ($jsonMerge !== null && $path === self::PRIVATE_API_KEY_PATH) {
+            return $this->error($path, 'json_merge is not supported for this path.');
+        }
+
         if ($jsonMerge !== null) {
             $mergedValue = $this->processJsonMerge($path, $jsonMerge, $storeId);
             if ($mergedValue === null) {
@@ -238,7 +251,13 @@ class UpdateConfig implements ResolverInterface
             $storeId
         );
 
-        if ($currentValue === $value) {
+        if ($path === self::PRIVATE_API_KEY_PATH) {
+            if ($this->storeAlreadyHasPrivateApiKey($currentValue, $value)) {
+                return ['path' => $path, 'success' => false, 'message' => 'No change.'];
+            }
+
+            $value = $this->encryptor->encrypt($value);
+        } elseif ($currentValue === $value) {
             return ['path' => $path, 'success' => false, 'message' => 'No change.'];
         }
 
@@ -363,6 +382,20 @@ class UpdateConfig implements ResolverInterface
         }
 
         return null;
+    }
+
+    /**
+     * @param string $currentValue
+     * @param string $value
+     * @return bool
+     */
+    private function storeAlreadyHasPrivateApiKey(string $currentValue, string $value): bool
+    {
+        if ($currentValue === '') {
+            return false;
+        }
+
+        return $currentValue === $value || $this->encryptor->decrypt($currentValue) === $value;
     }
 
     /**
