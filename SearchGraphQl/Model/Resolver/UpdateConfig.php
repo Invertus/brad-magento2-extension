@@ -31,9 +31,6 @@ class UpdateConfig implements ResolverInterface
 {
     /**
      * Whitelist of config paths that can be updated remotely.
-     *
-     * Security-sensitive paths (sync/secure_token, private_endpoint/*) are
-     * deliberately excluded — they must be set via Magento admin only.
      */
     private const ALLOWED_PATHS = [
         // Search
@@ -41,6 +38,7 @@ class UpdateConfig implements ResolverInterface
         'bradsearch_search/general/api_url',
         'bradsearch_search/general/facets_api_url',
         'bradsearch_search/general/api_key',
+        'bradsearch_search/private_endpoint/api_key',
         'bradsearch_search/general/debug_logging',
         'bradsearch_search/sync/enabled',
         'bradsearch_search/sync/webhook_url',
@@ -53,6 +51,10 @@ class UpdateConfig implements ResolverInterface
         'bradsearch_analytics/general/api_url',
         'bradsearch_analytics/general/website_id',
     ];
+
+    private const PRIVATE_API_KEY_PATH = 'bradsearch_search/private_endpoint/api_key';
+
+    private const PRIVATE_API_KEY_MAX_LENGTH = 2048;
 
     private const BOOLEAN_PATHS = [
         'bradsearch_search/general/enabled',
@@ -226,6 +228,10 @@ class UpdateConfig implements ResolverInterface
             return $this->error($path, $validationError);
         }
 
+        if ($path === self::PRIVATE_API_KEY_PATH) {
+            $value = trim($value);
+        }
+
         $currentValue = (string)$this->scopeConfig->getValue(
             $path,
             ScopeInterface::SCOPE_STORE,
@@ -334,6 +340,20 @@ class UpdateConfig implements ResolverInterface
         } elseif (in_array($path, self::URL_PATHS, true)) {
             if ($value !== '' && filter_var($value, FILTER_VALIDATE_URL) === false) {
                 return 'Value must be a valid URL or empty string.';
+            }
+        } elseif ($path === self::PRIVATE_API_KEY_PATH) {
+            $privateKey = trim($value);
+
+            if ($privateKey === '') {
+                return 'Value cannot be empty for this path, the dashboard would lose access to this store.';
+            }
+
+            if (strlen($privateKey) > self::PRIVATE_API_KEY_MAX_LENGTH) {
+                return 'Value is longer than ' . self::PRIVATE_API_KEY_MAX_LENGTH . ' characters for this path.';
+            }
+
+            if (preg_match('/[^\x21-\x7E]/', $privateKey)) {
+                return 'Value must be printable ASCII without spaces for this path, it travels in an HTTP header.';
             }
         } elseif (in_array($path, self::JSON_PATHS, true) && $value !== '') {
             json_decode($value);

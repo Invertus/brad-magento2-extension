@@ -206,7 +206,6 @@ class UpdateConfigTest extends TestCase
             $this->resolveInfo,
             null,
             ['items' => [
-                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => 'new-key'],
                 ['path' => 'bradsearch_search/private_endpoint/enabled', 'value' => '0'],
                 ['path' => 'bradsearch_search/sync/secure_token', 'value' => 'new-token'],
             ]]
@@ -216,6 +215,62 @@ class UpdateConfigTest extends TestCase
             $this->assertFalse($item['success']);
             $this->assertStringContainsString('not allowed', $item['message']);
         }
+    }
+
+    public function testAcceptsARotatedPrivateApiKey(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->configWriter->expects($this->once())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => 'rotated.private.key'],
+            ]]
+        );
+
+        $this->assertTrue($result[0]['success']);
+    }
+
+    public function testRefusesToClearThePrivateApiKey(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->configWriter->expects($this->never())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => '   '],
+            ]]
+        );
+
+        $this->assertFalse($result[0]['success']);
+        $this->assertStringContainsString('cannot be empty', $result[0]['message']);
+    }
+
+    public function testRefusesAPrivateApiKeyThatCannotTravelInAHeader(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->configWriter->expects($this->never())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => "broken\tkey"],
+            ]]
+        );
+
+        $this->assertFalse($result[0]['success']);
+        $this->assertStringContainsString('printable ASCII', $result[0]['message']);
     }
 
     public function testRejectsBothValueAndJsonMerge(): void
