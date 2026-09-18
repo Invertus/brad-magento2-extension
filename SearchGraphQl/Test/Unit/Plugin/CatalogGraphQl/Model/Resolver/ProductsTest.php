@@ -7,7 +7,10 @@ declare(strict_types=1);
 namespace BradSearch\SearchGraphQl\Test\Unit\Plugin\CatalogGraphQl\Model\Resolver;
 
 use BradSearch\SearchGraphQl\Model\MockData\ProductsProvider;
+use BradSearch\SearchGraphQl\Model\SearchTermFilter;
 use BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products;
+use GraphQL\Language\AST\NameNode;
+use GraphQL\Language\AST\OperationDefinitionNode;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
@@ -42,7 +45,7 @@ class ProductsTest extends TestCase
             ->willReturn(false);
 
         // Mock operation name
-        $this->resolveInfoMock->operation = (object)['name' => (object)['value' => 'ProductSearch']];
+        $this->setOperationName('ProductSearch');
 
         // Expect proceed to be called
         $proceed = function () use ($expectedResult) {
@@ -97,7 +100,7 @@ class ProductsTest extends TestCase
         $expectedResult = ['items' => [], 'total_count' => 0];
 
         // Mock different operation name
-        $this->resolveInfoMock->operation = (object)['name' => (object)['value' => 'CategoryProducts']];
+        $this->setOperationName('CategoryProducts');
 
         // Expect proceed to be called
         $proceed = function () use ($expectedResult) {
@@ -148,7 +151,7 @@ class ProductsTest extends TestCase
             ->willReturn(true);
 
         // Mock operation name
-        $this->resolveInfoMock->operation = (object)['name' => (object)['value' => 'ProductSearch']];
+        $this->setOperationName('ProductSearch');
 
         // Expect ProductsProvider to be called
         $this->productsProviderMock
@@ -172,7 +175,7 @@ class ProductsTest extends TestCase
             $args
         );
 
-        $this->assertSame($bradSearchResult, $result);
+        $this->assertSame($bradSearchResult + ['search_term' => $searchTerm, 'filters' => $filters], $result);
     }
 
     /**
@@ -190,9 +193,6 @@ class ProductsTest extends TestCase
             ->expects($this->once())
             ->method('getValue')
             ->willReturn(true);
-
-        // Mock no operation in ResolveInfo
-        $this->resolveInfoMock->operation = null;
 
         // Expect ProductsProvider to be called
         $this->productsProviderMock
@@ -214,7 +214,7 @@ class ProductsTest extends TestCase
             $args
         );
 
-        $this->assertSame($bradSearchResult, $result);
+        $this->assertSame($bradSearchResult + ['search_term' => 'test', 'filters' => []], $result);
 
         unset($_GET['operationName']);
     }
@@ -233,7 +233,7 @@ class ProductsTest extends TestCase
             ->willReturn(true);
 
         // Mock operation name
-        $this->resolveInfoMock->operation = (object)['name' => (object)['value' => 'ProductSearch']];
+        $this->setOperationName('ProductSearch');
 
         // Expect default pagination values
         $this->productsProviderMock
@@ -257,6 +257,67 @@ class ProductsTest extends TestCase
         );
     }
 
+    public function testJunkTermFallsBackWithoutCallingApiOrLogging(): void
+    {
+        $args = ['search' => 'tsepnye-pily/akkumulyatornye-pily.html'];
+        $fallback = ['items' => [], 'total_count' => 0];
+
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('ProductSearch');
+
+        $this->productsProviderMock->expects($this->never())->method('getSearchResults');
+        $this->loggerMock->expects($this->never())->method('error');
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $fallback,
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            null,
+            $args
+        );
+
+        $this->assertSame($fallback, $result);
+    }
+
+    public function testApiFailureLogsOneLineWithoutTraceAndFallsBack(): void
+    {
+        $args = ['search' => 'Karcher 8/1'];
+        $fallback = ['items' => [], 'total_count' => 0];
+
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('ProductSearch');
+
+        $this->productsProviderMock
+            ->expects($this->once())
+            ->method('getSearchResults')
+            ->willThrowException(new \Exception('BradSearch API returned status code: 403'));
+
+        $this->loggerMock
+            ->expects($this->once())
+            ->method('error')
+            ->with(
+                'BradSearch API failed, falling back to default search',
+                [
+                    'error' => 'BradSearch API returned status code: 403',
+                    'search_term' => 'Karcher 8/1',
+                ]
+            );
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $fallback,
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            null,
+            $args
+        );
+
+        $this->assertSame($fallback, $result);
+    }
+
     protected function setUp(): void
     {
         $this->scopeConfigMock = $this->createMock(ScopeConfigInterface::class);
@@ -275,7 +336,16 @@ class ProductsTest extends TestCase
             $this->scopeConfigMock,
             $this->storeManagerMock,
             $this->productsProviderMock,
-            $this->loggerMock
+            $this->loggerMock,
+            new SearchTermFilter()
         );
+    }
+
+    private function setOperationName(string $name): void
+    {
+        $this->resolveInfoMock->operation = new OperationDefinitionNode([
+            'operation' => 'query',
+            'name' => new NameNode(['value' => $name]),
+        ]);
     }
 }

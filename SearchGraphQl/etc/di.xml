@@ -27,14 +27,6 @@
                 type="BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Products"/>
     </type>
 
-    <!-- ProductsProvider with BradSearch API dependencies -->
-    <type name="BradSearch\SearchGraphQl\Model\MockData\ProductsProvider">
-        <arguments>
-            <argument name="apiClient" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Client</argument>
-            <argument name="responseMapper" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\ResponseMapper</argument>
-        </arguments>
-    </type>
-
     <!-- Plugin to intercept aggregations and return mock data when BradSearch enabled -->
     <type name="Magento\CatalogGraphQl\Model\Resolver\Aggregations">
         <plugin name="bradsearch_aggregations_interceptor"
@@ -93,6 +85,7 @@
     <type name="BradSearch\SearchGraphQl\Model\Resolver\BradProducts">
         <arguments>
             <argument name="apiKeyValidator" xsi:type="object">BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator</argument>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>
     </type>
 
@@ -122,8 +115,17 @@
         </arguments>
     </type>
 
-    <!-- Virtual logger that writes to bradsearch.log (unified log file) -->
-    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Magento\Framework\Logger\Monolog">
+    <type name="BradSearch\SearchGraphQl\Model\MockData\AggregationsProvider">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+    <!-- Virtual logger that writes to bradsearch.log (unified log file).
+         Built on Monolog\Logger, not Magento\Framework\Logger\Monolog: a virtualType of the
+         latter inherits its handlers array (system, debug, syslog) and Magento merges array
+         arguments by item name, so bradsearch INFO/ERROR would still reach system.log. -->
+    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Monolog\Logger">
         <arguments>
             <argument name="name" xsi:type="string">bradsearch</argument>
             <argument name="handlers" xsi:type="array">

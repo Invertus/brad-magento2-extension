@@ -26,12 +26,13 @@ type Query {
         filter: BradProductFilterInput
         pageSize: Int = 300
         currentPage: Int = 1
-    ): BradProductsOutput @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\BradProducts") @doc(description: "Direct MySQL product listing for BradSearch sync. Requires X-BradSearch-Api-Key header. No stock filtering applied.")
+    ): BradProductsOutput @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\BradProducts") @doc(description: "Direct MySQL product listing for BradSearch sync, ordered by entity_id ascending so offset pages are stable. Requires X-BradSearch-Api-Key header. The module applies no stock filter of its own; total_count is read after the page loads, so it matches whatever collection plugins let through.")
 }
 
 type BradProductsOutput {
-    total_count: Int @doc(description: "Total number of matching products")
-    items: [ProductInterface] @doc(description: "Product items")
+    total_count: Int @doc(description: "Total number of matching products, counted after collection plugins have applied, so it matches the items the pages deliver")
+    items: [ProductInterface] @doc(description: "Product items, ordered by entity_id ascending")
+    skipped_count: Int @doc(description: "Products on this page that could not be built and were left out of items. They are still part of total_count.")
     page_info: SearchResultPageInfo @doc(description: "Pagination info")
 }
 
