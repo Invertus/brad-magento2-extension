@@ -121,8 +121,11 @@
         </arguments>
     </type>
 
-    <!-- Virtual logger that writes to bradsearch.log (unified log file) -->
-    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Magento\Framework\Logger\Monolog">
+    <!-- Virtual logger that writes to bradsearch.log (unified log file).
+         Built on Monolog\Logger, not Magento\Framework\Logger\Monolog: a virtualType of the
+         latter inherits its handlers array (system, debug, syslog) and Magento merges array
+         arguments by item name, so bradsearch INFO/ERROR would still reach system.log. -->
+    <virtualType name="BradSearch\SearchGraphQl\Model\Logger\VirtualLogger" type="Monolog\Logger">
         <arguments>
             <argument name="name" xsi:type="string">bradsearch</argument>
             <argument name="handlers" xsi:type="array">
