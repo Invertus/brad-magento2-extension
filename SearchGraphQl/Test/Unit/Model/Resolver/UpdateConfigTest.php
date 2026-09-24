@@ -716,6 +716,7 @@ class UpdateConfigTest extends TestCase
     public function testValidationAllowsEmptyUrl(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->scopeConfig->method('getValue')->willReturn('https://search.example.com/api/v2/query');
 
         $this->configWriter->expects($this->once())->method('save');
 
@@ -749,6 +750,7 @@ class UpdateConfigTest extends TestCase
     public function testValidationAllowsEmptyJsonValue(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->scopeConfig->method('getValue')->willReturn('{"scriptUrl":"https://cdn.example.com/latest/autocomplete.js"}');
 
         $this->configWriter->expects($this->once())->method('save');
 
