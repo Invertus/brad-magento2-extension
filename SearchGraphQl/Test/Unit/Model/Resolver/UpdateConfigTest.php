@@ -291,6 +291,27 @@ class UpdateConfigTest extends TestCase
         $this->assertSame('No change.', $result[0]['message']);
     }
 
+    public function testKeepsTheExactNoChangeWordingBradAppMatchesOnToTreatARetriedKeyPushAsDelivered(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->scopeConfig->method('getValue')->willReturn('enc:rotated.private.key');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/private_endpoint/api_key', 'value' => 'rotated.private.key'],
+            ]]
+        );
+
+        $this->assertSame(
+            ['path' => 'bradsearch_search/private_endpoint/api_key', 'success' => false, 'message' => 'No change.'],
+            $result[0]
+        );
+    }
+
     public function testRefusesAJsonMergeOnThePrivateApiKey(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
