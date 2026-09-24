@@ -55,6 +55,10 @@ class UpdateConfig implements ResolverInterface
 
     private const PRIVATE_API_KEY_PATH = 'bradsearch_search/private_endpoint/api_key';
 
+    private const STATUS_WRITTEN = 'WRITTEN';
+    private const STATUS_UNCHANGED = 'UNCHANGED';
+    private const STATUS_REFUSED = 'REFUSED';
+
     private const PRIVATE_API_KEY_MAX_LENGTH = 2048;
 
     private const BOOLEAN_PATHS = [
@@ -253,12 +257,12 @@ class UpdateConfig implements ResolverInterface
 
         if ($path === self::PRIVATE_API_KEY_PATH) {
             if ($this->storeAlreadyHasPrivateApiKey($currentValue, $value)) {
-                return ['path' => $path, 'success' => false, 'message' => 'No change.'];
+                return ['path' => $path, 'success' => false, 'status' => self::STATUS_UNCHANGED, 'message' => 'No change.'];
             }
 
             $value = $this->encryptor->encrypt($value);
         } elseif ($currentValue === $value) {
-            return ['path' => $path, 'success' => false, 'message' => 'No change.'];
+            return ['path' => $path, 'success' => false, 'status' => self::STATUS_UNCHANGED, 'message' => 'No change.'];
         }
 
         $this->configWriter->save(
@@ -268,7 +272,7 @@ class UpdateConfig implements ResolverInterface
             $storeId
         );
 
-        return ['path' => $path, 'success' => true, 'message' => null];
+        return ['path' => $path, 'success' => true, 'status' => self::STATUS_WRITTEN, 'message' => null];
     }
 
     /**
@@ -407,6 +411,6 @@ class UpdateConfig implements ResolverInterface
      */
     private function error(string $path, string $message): array
     {
-        return ['path' => $path, 'success' => false, 'message' => $message];
+        return ['path' => $path, 'success' => false, 'status' => self::STATUS_REFUSED, 'message' => $message];
     }
 }

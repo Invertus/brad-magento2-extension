@@ -160,6 +160,7 @@ class UpdateConfigTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertTrue($result[0]['success']);
+        $this->assertSame('WRITTEN', $result[0]['status']);
         $this->assertEquals('bradsearch_search/general/enabled', $result[0]['path']);
         $this->assertNull($result[0]['message']);
     }
@@ -205,6 +206,7 @@ class UpdateConfigTest extends TestCase
 
         $this->assertCount(1, $result);
         $this->assertFalse($result[0]['success']);
+        $this->assertSame('REFUSED', $result[0]['status']);
         $this->assertStringContainsString('not allowed', $result[0]['message']);
     }
 
@@ -291,7 +293,7 @@ class UpdateConfigTest extends TestCase
         $this->assertSame('No change.', $result[0]['message']);
     }
 
-    public function testKeepsTheExactNoChangeWordingBradAppMatchesOnToTreatARetriedKeyPushAsDelivered(): void
+    public function testReportsAPrivateApiKeyTheStoreAlreadyHasAsUnchanged(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
         $this->scopeConfig->method('getValue')->willReturn('enc:rotated.private.key');
@@ -307,9 +309,29 @@ class UpdateConfigTest extends TestCase
         );
 
         $this->assertSame(
-            ['path' => 'bradsearch_search/private_endpoint/api_key', 'success' => false, 'message' => 'No change.'],
+            ['path' => 'bradsearch_search/private_endpoint/api_key', 'success' => false, 'status' => 'UNCHANGED', 'message' => 'No change.'],
             $result[0]
         );
+    }
+
+    public function testReportsASearchApiKeyTheStoreAlreadyHasAsUnchanged(): void
+    {
+        $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        $this->scopeConfig->method('getValue')->willReturn('current.query.token');
+        $this->configWriter->expects($this->never())->method('save');
+
+        $result = $this->resolver->resolve(
+            $this->field,
+            $this->context,
+            $this->resolveInfo,
+            null,
+            ['items' => [
+                ['path' => 'bradsearch_search/general/api_key', 'value' => 'current.query.token'],
+            ]]
+        );
+
+        $this->assertFalse($result[0]['success']);
+        $this->assertSame('UNCHANGED', $result[0]['status']);
     }
 
     public function testRefusesAJsonMergeOnThePrivateApiKey(): void
