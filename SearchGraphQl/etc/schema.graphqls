@@ -45,7 +45,14 @@ input BradConfigInput {
 type BradConfigResult {
     path: String! @doc(description: "The config path that was processed")
     success: Boolean! @doc(description: "Whether the update succeeded")
+    status: BradConfigStatus! @doc(description: "What happened to the path. Branch on this, not on message.")
     message: String @doc(description: "Error message on failure, null on success")
+}
+
+enum BradConfigStatus {
+    WRITTEN @doc(description: "The value was saved")
+    UNCHANGED @doc(description: "The store already held this value, nothing was saved")
+    REFUSED @doc(description: "The value was rejected, see message")
 }
 
 type Mutation {

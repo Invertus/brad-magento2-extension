@@ -12,6 +12,7 @@ use Magento\Framework\App\Cache\TypeListInterface;
 use Magento\Framework\App\Config\ReinitableConfigInterface;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\App\Config\Storage\WriterInterface;
+use Magento\Framework\Encryption\EncryptorInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
 use Magento\Framework\GraphQl\Exception\GraphQlInputException;
@@ -31,9 +32,6 @@ class UpdateConfig implements ResolverInterface
 {
     /**
      * Whitelist of config paths that can be updated remotely.
-     *
-     * Security-sensitive paths (sync/secure_token, private_endpoint/*) are
-     * deliberately excluded — they must be set via Magento admin only.
      */
     private const ALLOWED_PATHS = [
         // Search
@@ -41,6 +39,7 @@ class UpdateConfig implements ResolverInterface
         'bradsearch_search/general/api_url',
         'bradsearch_search/general/facets_api_url',
         'bradsearch_search/general/api_key',
+        'bradsearch_search/private_endpoint/api_key',
         'bradsearch_search/general/debug_logging',
         'bradsearch_search/sync/enabled',
         'bradsearch_search/sync/webhook_url',
@@ -53,6 +52,14 @@ class UpdateConfig implements ResolverInterface
         'bradsearch_analytics/general/api_url',
         'bradsearch_analytics/general/website_id',
     ];
+
+    private const PRIVATE_API_KEY_PATH = 'bradsearch_search/private_endpoint/api_key';
+
+    private const STATUS_WRITTEN = 'WRITTEN';
+    private const STATUS_UNCHANGED = 'UNCHANGED';
+    private const STATUS_REFUSED = 'REFUSED';
+
+    private const PRIVATE_API_KEY_MAX_LENGTH = 2048;
 
     private const BOOLEAN_PATHS = [
         'bradsearch_search/general/enabled',
@@ -104,12 +111,18 @@ class UpdateConfig implements ResolverInterface
     private LoggerInterface $logger;
 
     /**
+     * @var EncryptorInterface
+     */
+    private EncryptorInterface $encryptor;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param WriterInterface $configWriter
      * @param ReinitableConfigInterface $reinitableConfig
      * @param TypeListInterface $cacheTypeList
      * @param ScopeConfigInterface $scopeConfig
      * @param LoggerInterface $logger
+     * @param EncryptorInterface $encryptor
      */
     public function __construct(
         ApiKeyValidator $apiKeyValidator,
@@ -117,7 +130,8 @@ class UpdateConfig implements ResolverInterface
         ReinitableConfigInterface $reinitableConfig,
         TypeListInterface $cacheTypeList,
         ScopeConfigInterface $scopeConfig,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        EncryptorInterface $encryptor
     ) {
         $this->apiKeyValidator = $apiKeyValidator;
         $this->configWriter = $configWriter;
@@ -125,6 +139,7 @@ class UpdateConfig implements ResolverInterface
         $this->cacheTypeList = $cacheTypeList;
         $this->scopeConfig = $scopeConfig;
         $this->logger = $logger;
+        $this->encryptor = $encryptor;
     }
 
     /**
@@ -213,6 +228,10 @@ class UpdateConfig implements ResolverInterface
             return $this->error($path, 'Must specify either value or json_merge.');
         }
 
+        if ($jsonMerge !== null && $path === self::PRIVATE_API_KEY_PATH) {
+            return $this->error($path, 'json_merge is not supported for this path.');
+        }
+
         if ($jsonMerge !== null) {
             $mergedValue = $this->processJsonMerge($path, $jsonMerge, $storeId);
             if ($mergedValue === null) {
@@ -226,14 +245,24 @@ class UpdateConfig implements ResolverInterface
             return $this->error($path, $validationError);
         }
 
+        if ($path === self::PRIVATE_API_KEY_PATH) {
+            $value = trim($value);
+        }
+
         $currentValue = (string)$this->scopeConfig->getValue(
             $path,
             ScopeInterface::SCOPE_STORE,
             $storeId
         );
 
-        if ($currentValue === $value) {
-            return ['path' => $path, 'success' => false, 'message' => 'No change.'];
+        if ($path === self::PRIVATE_API_KEY_PATH) {
+            if ($this->storeAlreadyHasPrivateApiKey($currentValue, $value)) {
+                return ['path' => $path, 'success' => false, 'status' => self::STATUS_UNCHANGED, 'message' => 'No change.'];
+            }
+
+            $value = $this->encryptor->encrypt($value);
+        } elseif ($currentValue === $value) {
+            return ['path' => $path, 'success' => false, 'status' => self::STATUS_UNCHANGED, 'message' => 'No change.'];
         }
 
         $this->configWriter->save(
@@ -243,7 +272,7 @@ class UpdateConfig implements ResolverInterface
             $storeId
         );
 
-        return ['path' => $path, 'success' => true, 'message' => null];
+        return ['path' => $path, 'success' => true, 'status' => self::STATUS_WRITTEN, 'message' => null];
     }
 
     /**
@@ -335,6 +364,20 @@ class UpdateConfig implements ResolverInterface
             if ($value !== '' && filter_var($value, FILTER_VALIDATE_URL) === false) {
                 return 'Value must be a valid URL or empty string.';
             }
+        } elseif ($path === self::PRIVATE_API_KEY_PATH) {
+            $privateKey = trim($value);
+
+            if ($privateKey === '') {
+                return 'Value cannot be empty for this path, the dashboard would lose access to this store.';
+            }
+
+            if (strlen($privateKey) > self::PRIVATE_API_KEY_MAX_LENGTH) {
+                return 'Value is longer than ' . self::PRIVATE_API_KEY_MAX_LENGTH . ' characters for this path.';
+            }
+
+            if (preg_match('/[^\x21-\x7E]/', $privateKey)) {
+                return 'Value must be printable ASCII without spaces for this path, it travels in an HTTP header.';
+            }
         } elseif (in_array($path, self::JSON_PATHS, true) && $value !== '') {
             json_decode($value);
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -346,6 +389,20 @@ class UpdateConfig implements ResolverInterface
     }
 
     /**
+     * @param string $currentValue
+     * @param string $value
+     * @return bool
+     */
+    private function storeAlreadyHasPrivateApiKey(string $currentValue, string $value): bool
+    {
+        if ($currentValue === '') {
+            return false;
+        }
+
+        return $currentValue === $value || $this->encryptor->decrypt($currentValue) === $value;
+    }
+
+    /**
      * Build error result
      *
      * @param string $path
@@ -354,6 +411,6 @@ class UpdateConfig implements ResolverInterface
      */
     private function error(string $path, string $message): array
     {
-        return ['path' => $path, 'success' => false, 'message' => $message];
+        return ['path' => $path, 'success' => false, 'status' => self::STATUS_REFUSED, 'message' => $message];
     }
 }
