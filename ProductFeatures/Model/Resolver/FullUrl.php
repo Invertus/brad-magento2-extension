@@ -81,15 +81,12 @@ class FullUrl implements ResolverInterface
         $this->urlRewriteDataLoader->addToQueue($productId, $storeId);
 
         return $this->valueFactory->create(function () use ($product, $productId, $storeId) {
-            $productUrl = $product->getProductUrl();
-
-            if ($this->isUnfriendlyUrl($productUrl)) {
-                $rewritePath = $this->urlRewriteDataLoader->getRewrite($productId, $storeId);
-                if ($rewritePath) {
-                    $baseUrl = rtrim($this->storeManager->getStore()->getBaseUrl(), '/');
-                    $productUrl = $baseUrl . '/' . $rewritePath;
-                }
-            }
+            // getProductUrl() can use the default store's base URL, so build from the requested store view.
+            $rewritePath = $this->urlRewriteDataLoader->getRewrite($productId, $storeId);
+            $baseUrl = $this->getBaseUrl();
+            $productUrl = $rewritePath && $baseUrl !== ''
+                ? rtrim($baseUrl, '/') . '/' . ltrim($rewritePath, '/')
+                : $product->getProductUrl();
 
             return $this->applyPwaUrl($productUrl);
         });
@@ -110,17 +107,6 @@ class FullUrl implements ResolverInterface
         }
 
         return $productUrl;
-    }
-
-    /**
-     * Check if URL is unfriendly (contains catalog/product/view)
-     *
-     * @param string $url
-     * @return bool
-     */
-    private function isUnfriendlyUrl(string $url): bool
-    {
-        return strpos($url, 'catalog/product/view') !== false;
     }
 
     /**
