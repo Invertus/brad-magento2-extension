@@ -13,6 +13,7 @@ use Magento\Framework\GraphQl\Query\Resolver\ValueFactory;
 use Magento\Framework\GraphQl\Query\ResolverInterface;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Model\ScopeInterface;
+use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
 
 /**
@@ -121,32 +122,32 @@ class FullUrl implements ResolverInterface
      */
     private function addStorePath(string $pwaUrl, string $baseUrl): string
     {
-        $defaultBaseUrl = $this->getDefaultStoreBaseUrl();
+        $defaultStore = $this->getDefaultStore();
+        if ($defaultStore === null || $this->getPwaUrl((int)$defaultStore->getId()) !== $pwaUrl) {
+            return $pwaUrl;
+        }
+
+        $defaultBaseUrl = (string)$defaultStore->getBaseUrl();
         if ($defaultBaseUrl === '' || $baseUrl === $defaultBaseUrl || strpos($baseUrl, $defaultBaseUrl) !== 0) {
             return $pwaUrl;
         }
 
-        $storePath = substr($baseUrl, strlen($defaultBaseUrl));
-        $pwaUrl = rtrim($pwaUrl, '/') . '/';
-        if (substr($pwaUrl, -strlen($storePath)) === $storePath) {
-            return $pwaUrl;
-        }
-
-        return $pwaUrl . $storePath;
+        return rtrim($pwaUrl, '/') . '/' . substr($baseUrl, strlen($defaultBaseUrl));
     }
 
     /**
-     * Get base URL of the current website's default store
+     * Get the current website's default store
      *
-     * @return string
+     * @return Store|null
      */
-    private function getDefaultStoreBaseUrl(): string
+    private function getDefaultStore(): ?Store
     {
         try {
-            $defaultStore = $this->storeManager->getStore()->getWebsite()->getDefaultStore();
-            return $defaultStore ? (string)$defaultStore->getBaseUrl() : '';
-        } catch (\Exception $e) {
-            return '';
+            $website = $this->storeManager->getStore()->getWebsite();
+            $defaultStore = $website ? $website->getDefaultStore() : null;
+            return $defaultStore instanceof Store ? $defaultStore : null;
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 
@@ -178,13 +179,15 @@ class FullUrl implements ResolverInterface
     /**
      * Get PWA frontend URL from configuration
      *
+     * @param int|null $storeId
      * @return string|null
      */
-    private function getPwaUrl(): ?string
+    private function getPwaUrl(?int $storeId = null): ?string
     {
         return $this->scopeConfig->getValue(
             'mm_pwa_theme/general/url',
-            ScopeInterface::SCOPE_STORE
+            ScopeInterface::SCOPE_STORE,
+            $storeId
         );
     }
 }

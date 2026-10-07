@@ -22,7 +22,9 @@ use PHPUnit\Framework\TestCase;
 class FullUrlTest extends TestCase
 {
     private const STORE_ID = 2;
+    private const DEFAULT_STORE_ID = 1;
     private const PRODUCT_ID = 84009;
+    private const INHERITED = 'inherited';
 
     public function testWithoutPwaUrlKeepsMagentoUrl(): void
     {
@@ -47,9 +49,37 @@ class FullUrlTest extends TestCase
 
     public function testSecondStoreViewWithOwnPwaUrlIsNotDoubled(): void
     {
-        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', 'https://pwa.test/ru/');
+        $url = $this->resolve(
+            'https://shop.test/ru/',
+            'https://shop.test/',
+            'https://shop.test/ru/drill.html',
+            'https://pwa.test/ru/',
+            null,
+            'https://pwa.test/'
+        );
 
         $this->assertSame('https://pwa.test/ru/drill.html', $url);
+    }
+
+    public function testSecondStoreViewWithOwnPwaUrlOnOtherHostKeepsPlainReplace(): void
+    {
+        $url = $this->resolve(
+            'https://shop.test/ru/',
+            'https://shop.test/',
+            'https://shop.test/ru/drill.html',
+            'https://ru.pwa.test/',
+            null,
+            'https://pwa.test/'
+        );
+
+        $this->assertSame('https://ru.pwa.test/drill.html', $url);
+    }
+
+    public function testSharedPwaUrlEndingLikeStorePathStillGetsStorePath(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', 'https://pwa.test/guru/');
+
+        $this->assertSame('https://pwa.test/guru/ru/drill.html', $url);
     }
 
     public function testSharedPwaUrlWithoutTrailingSlashKeepsStorePath(): void
@@ -98,12 +128,17 @@ class FullUrlTest extends TestCase
         ?string $defaultStoreBaseUrl,
         string $magentoProductUrl,
         ?string $pwaUrl,
-        ?string $rewritePath = null
+        ?string $rewritePath = null,
+        ?string $defaultStorePwaUrl = self::INHERITED
     ): string {
         $defaultStore = null;
         if ($defaultStoreBaseUrl !== null) {
             $defaultStore = $this->createStub(Store::class);
             $defaultStore->method('getBaseUrl')->willReturn($defaultStoreBaseUrl);
+            $defaultStore->method('getId')->willReturn(self::DEFAULT_STORE_ID);
+        }
+        if ($defaultStorePwaUrl === self::INHERITED) {
+            $defaultStorePwaUrl = $pwaUrl;
         }
 
         $website = $this->createStub(Website::class);
@@ -118,7 +153,11 @@ class FullUrlTest extends TestCase
         $storeManager->method('getStore')->willReturn($store);
 
         $scopeConfig = $this->createStub(ScopeConfigInterface::class);
-        $scopeConfig->method('getValue')->willReturn($pwaUrl);
+        $scopeConfig->method('getValue')->willReturnCallback(
+            function (string $path, string $scope, $storeId = null) use ($pwaUrl, $defaultStorePwaUrl) {
+                return $storeId === self::DEFAULT_STORE_ID ? $defaultStorePwaUrl : $pwaUrl;
+            }
+        );
 
         $rewriteLoader = $this->createStub(UrlRewriteDataLoader::class);
         $rewriteLoader->method('getRewrite')->willReturn($rewritePath);
