@@ -67,6 +67,17 @@ class FullUrlTest extends TestCase
         $this->assertSame('https://shop.test/ru/catalog/product/view/id/84009/', $url);
     }
 
+    public function testEmptyBaseUrlKeepsMagentoUrl(): void
+    {
+        $url = $this->resolve(
+            '',
+            'polishing-machine.html',
+            'https://shop.test/polishing-machine.html'
+        );
+
+        $this->assertSame('https://shop.test/polishing-machine.html', $url);
+    }
+
     public function testPwaUrlReplacesTheStoreBaseUrl(): void
     {
         $url = $this->resolve(
