@@ -45,6 +45,17 @@ class FullUrlTest extends TestCase
         $this->assertSame('https://shop.test/polishing-machine.html', $url);
     }
 
+    public function testUnfriendlyMagentoUrlIsReplacedByRewrite(): void
+    {
+        $url = $this->resolve(
+            'https://shop.test/',
+            'polishing-machine.html',
+            'https://shop.test/catalog/product/view/id/84009/'
+        );
+
+        $this->assertSame('https://shop.test/polishing-machine.html', $url);
+    }
+
     public function testProductWithoutRewriteKeepsMagentoUrl(): void
     {
         $url = $this->resolve(
