@@ -16,6 +16,7 @@ use Magento\Framework\GraphQl\Query\Resolver\ValueFactory;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
+use Magento\Store\Model\Website;
 use PHPUnit\Framework\TestCase;
 
 class FullUrlTest extends TestCase
@@ -23,82 +24,95 @@ class FullUrlTest extends TestCase
     private const STORE_ID = 2;
     private const PRODUCT_ID = 84009;
 
-    public function testSecondStoreViewUsesItsOwnBaseUrl(): void
+    public function testWithoutPwaUrlKeepsMagentoUrl(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', null);
+
+        $this->assertSame('https://shop.test/ru/drill.html', $url);
+    }
+
+    public function testDefaultStoreGetsPwaHost(): void
+    {
+        $url = $this->resolve('https://shop.test/', 'https://shop.test/', 'https://shop.test/drill.html', 'https://pwa.test/');
+
+        $this->assertSame('https://pwa.test/drill.html', $url);
+    }
+
+    public function testSecondStoreViewKeepsItsPathWithSharedPwaUrl(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', 'https://pwa.test/');
+
+        $this->assertSame('https://pwa.test/ru/drill.html', $url);
+    }
+
+    public function testSecondStoreViewWithOwnPwaUrlIsNotDoubled(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', 'https://pwa.test/ru/');
+
+        $this->assertSame('https://pwa.test/ru/drill.html', $url);
+    }
+
+    public function testSharedPwaUrlWithoutTrailingSlashKeepsStorePath(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', 'https://shop.test/', 'https://shop.test/ru/drill.html', 'https://pwa.test');
+
+        $this->assertSame('https://pwa.test/ru/drill.html', $url);
+    }
+
+    public function testStoreOnOtherHostGetsPlainReplace(): void
+    {
+        $url = $this->resolve('https://ru.shop.test/', 'https://shop.test/', 'https://ru.shop.test/drill.html', 'https://pwa.test/');
+
+        $this->assertSame('https://pwa.test/drill.html', $url);
+    }
+
+    public function testStoreCodeUrlsGetPlainReplace(): void
+    {
+        $url = $this->resolve('https://shop.test/ru_store/', 'https://shop.test/lv_store/', 'https://shop.test/ru_store/drill.html', 'https://pwa.test/');
+
+        $this->assertSame('https://pwa.test/drill.html', $url);
+    }
+
+    public function testMissingDefaultStoreGetsPlainReplace(): void
+    {
+        $url = $this->resolve('https://shop.test/ru/', null, 'https://shop.test/ru/drill.html', 'https://pwa.test/');
+
+        $this->assertSame('https://pwa.test/drill.html', $url);
+    }
+
+    public function testUnfriendlyUrlUsesRewriteAndStorePath(): void
     {
         $url = $this->resolve(
             'https://shop.test/ru/',
-            'polishing-machine.html',
-            'https://shop.test/polishing-machine.html'
-        );
-
-        $this->assertSame('https://shop.test/ru/polishing-machine.html', $url);
-    }
-
-    public function testSingleStoreKeepsTheSameUrl(): void
-    {
-        $url = $this->resolve(
             'https://shop.test/',
-            'polishing-machine.html',
-            'https://shop.test/polishing-machine.html'
+            'https://shop.test/ru/catalog/product/view/id/84009/',
+            'https://pwa.test/',
+            'drill.html'
         );
 
-        $this->assertSame('https://shop.test/polishing-machine.html', $url);
-    }
-
-    public function testUnfriendlyMagentoUrlIsReplacedByRewrite(): void
-    {
-        $url = $this->resolve(
-            'https://shop.test/',
-            'polishing-machine.html',
-            'https://shop.test/catalog/product/view/id/84009/'
-        );
-
-        $this->assertSame('https://shop.test/polishing-machine.html', $url);
-    }
-
-    public function testProductWithoutRewriteKeepsMagentoUrl(): void
-    {
-        $url = $this->resolve(
-            'https://shop.test/ru/',
-            null,
-            'https://shop.test/ru/catalog/product/view/id/84009/'
-        );
-
-        $this->assertSame('https://shop.test/ru/catalog/product/view/id/84009/', $url);
-    }
-
-    public function testEmptyBaseUrlKeepsMagentoUrl(): void
-    {
-        $url = $this->resolve(
-            '',
-            'polishing-machine.html',
-            'https://shop.test/polishing-machine.html'
-        );
-
-        $this->assertSame('https://shop.test/polishing-machine.html', $url);
-    }
-
-    public function testPwaUrlReplacesTheStoreBaseUrl(): void
-    {
-        $url = $this->resolve(
-            'https://shop.test/ru/',
-            'polishing-machine.html',
-            'https://shop.test/polishing-machine.html',
-            'https://pwa.test/ru/'
-        );
-
-        $this->assertSame('https://pwa.test/ru/polishing-machine.html', $url);
+        $this->assertSame('https://pwa.test/ru/drill.html', $url);
     }
 
     private function resolve(
         string $storeBaseUrl,
-        ?string $rewritePath,
+        ?string $defaultStoreBaseUrl,
         string $magentoProductUrl,
-        ?string $pwaUrl = null
+        ?string $pwaUrl,
+        ?string $rewritePath = null
     ): string {
+        $defaultStore = null;
+        if ($defaultStoreBaseUrl !== null) {
+            $defaultStore = $this->createStub(Store::class);
+            $defaultStore->method('getBaseUrl')->willReturn($defaultStoreBaseUrl);
+        }
+
+        $website = $this->createStub(Website::class);
+        $website->method('getDefaultStore')->willReturn($defaultStore);
+
         $store = $this->createStub(Store::class);
         $store->method('getBaseUrl')->willReturn($storeBaseUrl);
         $store->method('getId')->willReturn(self::STORE_ID);
+        $store->method('getWebsite')->willReturn($website);
 
         $storeManager = $this->createStub(StoreManagerInterface::class);
         $storeManager->method('getStore')->willReturn($store);
@@ -106,13 +120,8 @@ class FullUrlTest extends TestCase
         $scopeConfig = $this->createStub(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willReturn($pwaUrl);
 
-        $rewriteLoader = $this->createMock(UrlRewriteDataLoader::class);
-        $rewriteLoader->expects($this->once())
-            ->method('addToQueue')
-            ->with(self::PRODUCT_ID, self::STORE_ID);
-        $rewriteLoader->method('getRewrite')
-            ->with(self::PRODUCT_ID, self::STORE_ID)
-            ->willReturn($rewritePath);
+        $rewriteLoader = $this->createStub(UrlRewriteDataLoader::class);
+        $rewriteLoader->method('getRewrite')->willReturn($rewritePath);
 
         $deferred = null;
         $valueFactory = $this->createStub(ValueFactory::class);

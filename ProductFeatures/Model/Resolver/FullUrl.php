@@ -81,12 +81,15 @@ class FullUrl implements ResolverInterface
         $this->urlRewriteDataLoader->addToQueue($productId, $storeId);
 
         return $this->valueFactory->create(function () use ($product, $productId, $storeId) {
-            // getProductUrl() can use the default store's base URL, so build from the requested store view.
-            $rewritePath = $this->urlRewriteDataLoader->getRewrite($productId, $storeId);
-            $baseUrl = $this->getBaseUrl();
-            $productUrl = $rewritePath && $baseUrl !== ''
-                ? rtrim($baseUrl, '/') . '/' . ltrim($rewritePath, '/')
-                : $product->getProductUrl();
+            $productUrl = $product->getProductUrl();
+
+            if ($this->isUnfriendlyUrl($productUrl)) {
+                $rewritePath = $this->urlRewriteDataLoader->getRewrite($productId, $storeId);
+                if ($rewritePath) {
+                    $baseUrl = rtrim($this->storeManager->getStore()->getBaseUrl(), '/');
+                    $productUrl = $baseUrl . '/' . $rewritePath;
+                }
+            }
 
             return $this->applyPwaUrl($productUrl);
         });
@@ -103,10 +106,59 @@ class FullUrl implements ResolverInterface
         $pwaUrl = $this->getPwaUrl();
         if ($pwaUrl) {
             $baseUrl = $this->getBaseUrl();
-            $productUrl = str_replace($baseUrl, $pwaUrl, $productUrl);
+            $productUrl = str_replace($baseUrl, $this->addStorePath($pwaUrl, $baseUrl), $productUrl);
         }
 
         return $productUrl;
+    }
+
+    /**
+     * Keep the store view's own path (e.g. "ru/") when the PWA URL is shared with the website's default store
+     *
+     * @param string $pwaUrl
+     * @param string $baseUrl
+     * @return string
+     */
+    private function addStorePath(string $pwaUrl, string $baseUrl): string
+    {
+        $defaultBaseUrl = $this->getDefaultStoreBaseUrl();
+        if ($defaultBaseUrl === '' || $baseUrl === $defaultBaseUrl || strpos($baseUrl, $defaultBaseUrl) !== 0) {
+            return $pwaUrl;
+        }
+
+        $storePath = substr($baseUrl, strlen($defaultBaseUrl));
+        $pwaUrl = rtrim($pwaUrl, '/') . '/';
+        if (substr($pwaUrl, -strlen($storePath)) === $storePath) {
+            return $pwaUrl;
+        }
+
+        return $pwaUrl . $storePath;
+    }
+
+    /**
+     * Get base URL of the current website's default store
+     *
+     * @return string
+     */
+    private function getDefaultStoreBaseUrl(): string
+    {
+        try {
+            $defaultStore = $this->storeManager->getStore()->getWebsite()->getDefaultStore();
+            return $defaultStore ? (string)$defaultStore->getBaseUrl() : '';
+        } catch (\Exception $e) {
+            return '';
+        }
+    }
+
+    /**
+     * Check if URL is unfriendly (contains catalog/product/view)
+     *
+     * @param string $url
+     * @return bool
+     */
+    private function isUnfriendlyUrl(string $url): bool
+    {
+        return strpos($url, 'catalog/product/view') !== false;
     }
 
     /**
