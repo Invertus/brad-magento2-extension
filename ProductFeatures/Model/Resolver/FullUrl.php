@@ -143,7 +143,11 @@ class FullUrl implements ResolverInterface
     private function getDefaultStore(): ?Store
     {
         try {
-            $website = $this->storeManager->getStore()->getWebsite();
+            $store = $this->storeManager->getStore();
+            if (!$store instanceof Store) {
+                return null;
+            }
+            $website = $store->getWebsite();
             $defaultStore = $website ? $website->getDefaultStore() : null;
             return $defaultStore instanceof Store ? $defaultStore : null;
         } catch (\Throwable $e) {
