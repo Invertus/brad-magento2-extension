@@ -21,6 +21,10 @@ use Psr\Log\LoggerInterface;
  */
 class ResponseMapper
 {
+    private const AI_MATCH_VALUES = ['exact', 'close', 'none'];
+
+    private const PRODUCT_AI_MATCH_VALUES = ['exact', 'close'];
+
     /**
      * @var ProductRepositoryInterface
      */
@@ -101,7 +105,57 @@ class ResponseMapper
             ],
             'search_result' => $searchResult,
             'layer_type' => 'search',
+            'bradsearch_search' => $this->mapSearchTracking($apiResponse, $items),
         ];
+    }
+
+    /**
+     * Build what the storefront sends with the results page's analytics events: the engine's
+     * correlation id and, when the engine's AI search answered the query, ai_search {used, match}
+     * plus the ai_match of each shown product. Null when the engine sent neither.
+     *
+     * @param array $apiResponse
+     * @param array $items mapped GraphQL items (the products the page shows)
+     * @return array|null
+     */
+    private function mapSearchTracking(array $apiResponse, array $items): ?array
+    {
+        $correlationId = (string)($apiResponse[Client::RESPONSE_CORRELATION_ID] ?? '');
+        $aiSearch = $apiResponse['ai_search'] ?? null;
+        $aiUsed = is_array($aiSearch)
+            && ($aiSearch['used'] ?? null) === true
+            && in_array($aiSearch['match'] ?? null, self::AI_MATCH_VALUES, true);
+
+        if ($correlationId === '' && !$aiUsed) {
+            return null;
+        }
+
+        $tracking = [
+            'correlation_id' => $correlationId !== '' ? $correlationId : null,
+            'ai_search' => null,
+            'ai_matches' => [],
+        ];
+
+        if (!$aiUsed) {
+            return $tracking;
+        }
+
+        $tracking['ai_search'] = ['used' => true, 'match' => $aiSearch['match']];
+
+        $shown = [];
+        foreach ($items as $item) {
+            $shown[(string)$item['entity_id']] = true;
+        }
+
+        foreach ($apiResponse['documents'] ?? [] as $doc) {
+            $productId = (string)($doc['id'] ?? '');
+            $aiMatch = $doc['ai_match'] ?? null;
+            if (isset($shown[$productId]) && in_array($aiMatch, self::PRODUCT_AI_MATCH_VALUES, true)) {
+                $tracking['ai_matches'][] = ['product_id' => (int)$productId, 'ai_match' => $aiMatch];
+            }
+        }
+
+        return $tracking;
     }
 
     /**
