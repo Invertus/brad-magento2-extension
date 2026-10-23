@@ -11,7 +11,7 @@ interface ProductInterface {
 }
 
 type Products {
-    bradsearch_search: BradSearchSearchTracking @doc(description: "BradSearch data for the search results page's analytics events (view-search, search-product-click). Set on BradSearch keyword searches (the ProductSearch operation); null otherwise.")
+    bradsearch_search: BradSearchSearchTracking @resolver(class: "BradSearch\\SearchGraphQl\\Model\\Resolver\\SearchTracking") @cache(cacheable: false) @doc(description: "BradSearch data for the search results page's analytics events (view-search, search-product-click). Set on BradSearch keyword searches (the ProductSearch operation); null otherwise. Asking for this field makes the response uncacheable, so every search gets its own correlation id.")
 }
 
 type BradSearchSearchTracking {
@@ -22,7 +22,7 @@ type BradSearchSearchTracking {
 
 type BradSearchAiSearch {
     used: Boolean! @doc(description: "Always true when ai_search is set.")
-    match: String! @doc(description: "exact: at least one shown product matches exactly; close: products are shown but none matches exactly; none: nothing to show.")
+    match: String! @doc(description: "The engine's verdict for the whole AI result (exact / close / none). Can differ from this page's ai_matches.")
 }
 
 type BradSearchAiMatch {
