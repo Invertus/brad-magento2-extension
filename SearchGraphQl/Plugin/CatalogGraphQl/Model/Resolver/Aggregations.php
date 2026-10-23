@@ -35,9 +35,18 @@ class Aggregations
      * `search_term` and `filters` via $value so we can reuse them.
      */
     private const SEARCH_OPERATION_NAMES = [
-        'ProductSearch',
+        self::OPERATION_NAME_PRODUCT_SEARCH,
         'getProductFiltersBySearch',
     ];
+
+    /**
+     * The PWA search page sends `ProductSearch` and `getProductFiltersBySearch`
+     * for the same term and builds its filter sidebar from the latter only, so
+     * facets fetched for `ProductSearch` are never read. The brand page sends
+     * `ProductSearch` with an empty term and does read them, which is why the
+     * skip applies only when there is a search term.
+     */
+    private const OPERATION_NAME_PRODUCT_SEARCH = 'ProductSearch';
 
     /**
      * @var ScopeConfigInterface
@@ -130,6 +139,14 @@ class Aggregations
             $searchTerm = $this->extractSearchTerm($value, $args, $info);
             $filters = $this->extractFilters($value, $args, $info);
 
+            if ($searchTerm !== '' && $this->isOperation($info, self::OPERATION_NAME_PRODUCT_SEARCH)) {
+                $this->logger->debug('Skipping facets request: ProductSearch aggregations are not read by the storefront', [
+                    'search_term' => $searchTerm,
+                ]);
+
+                return [];
+            }
+
             if ($this->searchTermFilter->isJunk($searchTerm)) {
                 $this->logger->debug('Skipping BradSearch: search term looks like a URL', [
                     'search_term' => $searchTerm,
@@ -175,39 +192,50 @@ class Aggregations
             return true;
         }
 
-        // Check operation name
-        return $this->isProductSearchOperation($info);
+        foreach (self::SEARCH_OPERATION_NAMES as $searchOpName) {
+            if ($this->isOperation($info, $searchOpName)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
-     * Check if the current GraphQL operation is a search operation
+     * Check if the current GraphQL operation has the given name
      *
      * @param ResolveInfo $info
+     * @param string $operationName
      * @return bool
      */
-    private function isProductSearchOperation(ResolveInfo $info): bool
+    private function isOperation(ResolveInfo $info, string $operationName): bool
     {
-        $operationName = null;
+        $currentOperationName = $this->getOperationName($info);
 
+        return $currentOperationName !== null && strcasecmp($currentOperationName, $operationName) === 0;
+    }
+
+    /**
+     * Get the current GraphQL operation name from the query or the request
+     *
+     * @param ResolveInfo $info
+     * @return string|null
+     */
+    private function getOperationName(ResolveInfo $info): ?string
+    {
         if (isset($info->operation) &&
             $info->operation !== null &&
             isset($info->operation->name) &&
             $info->operation->name !== null &&
             isset($info->operation->name->value)) {
-            $operationName = $info->operation->name->value;
-        } elseif (isset($_GET['operationName'])) {
-            $operationName = $_GET['operationName'];
+            return (string)$info->operation->name->value;
         }
 
-        if ($operationName !== null) {
-            foreach (self::SEARCH_OPERATION_NAMES as $searchOpName) {
-                if (strcasecmp($operationName, $searchOpName) === 0) {
-                    return true;
-                }
-            }
+        if (isset($_GET['operationName'])) {
+            return (string)$_GET['operationName'];
         }
 
-        return false;
+        return null;
     }
 
     /**

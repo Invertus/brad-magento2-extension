@@ -9,6 +9,8 @@ namespace BradSearch\SearchGraphQl\Test\Unit\Plugin\CatalogGraphQl\Model\Resolve
 use BradSearch\SearchGraphQl\Model\MockData\AggregationsProvider;
 use BradSearch\SearchGraphQl\Model\SearchTermFilter;
 use BradSearch\SearchGraphQl\Plugin\CatalogGraphQl\Model\Resolver\Aggregations;
+use GraphQL\Language\AST\NameNode;
+use GraphQL\Language\AST\OperationDefinitionNode;
 use GraphQL\Type\Definition\ObjectType;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\GraphQl\Config\Element\Field;
@@ -104,6 +106,94 @@ class AggregationsTest extends TestCase
         $this->assertSame($fallback, $result);
     }
 
+    public function testProductSearchWithTermReturnsNoAggregationsWithoutFacetsRequest(): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('ProductSearch');
+
+        $this->aggregationsProviderMock->expects($this->never())->method('getAggregations');
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $this->fail('Proceed should not be called'),
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            ['layer_type' => 'search', 'search_term' => 'pants', 'filters' => ['manufacturer' => ['eq' => 'Karcher']]]
+        );
+
+        $this->assertSame([], $result);
+    }
+
+    public function testProductSearchWithTermOnlyInVariablesReturnsNoAggregations(): void
+    {
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('ProductSearch');
+        $this->resolveInfoMock->variableValues = ['inputText' => 'pants', 'filters' => []];
+
+        $this->aggregationsProviderMock->expects($this->never())->method('getAggregations');
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $this->fail('Proceed should not be called'),
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            ['total_count' => 0, 'items' => []]
+        );
+
+        $this->assertSame([], $result);
+    }
+
+    public function testFilterSearchOperationStillFetchesBradSearchAggregations(): void
+    {
+        $expected = ['brand' => ['attribute_code' => 'brand', 'options' => []]];
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('getProductFiltersBySearch');
+
+        $this->aggregationsProviderMock
+            ->expects($this->once())
+            ->method('getAggregations')
+            ->with('pants', [])
+            ->willReturn($expected);
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $this->fail('Proceed should not be called'),
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            ['layer_type' => 'search', 'search_term' => 'pants', 'filters' => []]
+        );
+
+        $this->assertSame($expected, $result);
+    }
+
+    public function testProductSearchWithEmptyTermStillFetchesBradSearchAggregations(): void
+    {
+        $expected = ['manufacturer' => ['attribute_code' => 'manufacturer', 'options' => []]];
+        $this->scopeConfigMock->method('getValue')->willReturn(true);
+        $this->setOperationName('ProductSearch');
+        $this->resolveInfoMock->variableValues = ['inputText' => '', 'filters' => ['manufacturer' => ['eq' => 'Karcher']]];
+
+        $this->aggregationsProviderMock
+            ->expects($this->once())
+            ->method('getAggregations')
+            ->with('', [])
+            ->willReturn($expected);
+
+        $result = $this->subject->aroundResolve(
+            new \stdClass(),
+            fn () => $this->fail('Proceed should not be called'),
+            $this->fieldMock,
+            null,
+            $this->resolveInfoMock,
+            ['total_count' => 0, 'items' => []]
+        );
+
+        $this->assertSame($expected, $result);
+    }
+
     protected function setUp(): void
     {
         $this->scopeConfigMock = $this->createMock(ScopeConfigInterface::class);
@@ -128,5 +218,13 @@ class AggregationsTest extends TestCase
             $this->loggerMock,
             new SearchTermFilter()
         );
+    }
+
+    private function setOperationName(string $name): void
+    {
+        $this->resolveInfoMock->operation = new OperationDefinitionNode([
+            'operation' => 'query',
+            'name' => new NameNode(['value' => $name]),
+        ]);
     }
 }
