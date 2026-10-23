@@ -26,6 +26,13 @@ class Client
 
     private const EXCLUDED_FILTERS = ['show_out_of_stock', 'category_id', 'category_uid'];
 
+    /**
+     * Key under which search() returns the engine's request correlation id (from its response header)
+     */
+    public const RESPONSE_CORRELATION_ID = 'correlation_id';
+
+    private const CORRELATION_ID_HEADER = 'X-Request-Correlation-ID';
+
     private const PACKAGE_NAME = 'bradsearch/magento-extension';
     private const USER_AGENT_PRODUCT = 'BradSearch-Magento2';
 
@@ -118,6 +125,11 @@ class Client
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new \Exception('Failed to decode BradSearch API response: ' . json_last_error_msg());
+        }
+
+        $correlationId = $this->getResponseHeader(self::CORRELATION_ID_HEADER);
+        if ($correlationId !== '' && is_array($data)) {
+            $data[self::RESPONSE_CORRELATION_ID] = $correlationId;
         }
 
         return $data;
@@ -357,6 +369,28 @@ class Client
         $this->curl->addHeader('User-Agent', $this->getUserAgent());
         $this->curl->setOption(CURLOPT_TIMEOUT, 10);
         $this->curl->setOption(CURLOPT_CONNECTTIMEOUT, 5);
+    }
+
+    /**
+     * Read a header of the last response; header names are case-insensitive
+     *
+     * @param string $name
+     * @return string
+     */
+    private function getResponseHeader(string $name): string
+    {
+        $headers = $this->curl->getHeaders();
+        if (!is_array($headers)) {
+            return '';
+        }
+
+        foreach ($headers as $headerName => $value) {
+            if (strcasecmp((string)$headerName, $name) === 0 && is_string($value)) {
+                return trim($value);
+            }
+        }
+
+        return '';
     }
 
     /**

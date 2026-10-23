@@ -71,6 +71,37 @@ class ClientTest extends TestCase
     }
 
     /**
+     * Test the engine's request correlation id (response header, any letter case) is returned with the data
+     *
+     * @dataProvider correlationIdHeaderDataProvider
+     */
+    public function testSearchReturnsCorrelationIdFromResponseHeader(array $headers, ?string $expected): void
+    {
+        $this->setupConfigMocks('https://api.example.com/search', 'test-token');
+
+        $this->curlMock->method('getStatus')->willReturn(200);
+        $this->curlMock->method('getBody')->willReturn(json_encode(['documents' => [], 'total' => 0]));
+        $this->curlMock->method('getHeaders')->willReturn($headers);
+
+        $result = $this->subject->search('test');
+
+        $this->assertSame($expected, $result[Client::RESPONSE_CORRELATION_ID] ?? null);
+    }
+
+    /**
+     * Data provider for correlation id response headers
+     */
+    public static function correlationIdHeaderDataProvider(): array
+    {
+        return [
+            'as the engine names it' => [['X-Request-Correlation-ID' => 'abc-123'], 'abc-123'],
+            'Go canonical case' => [['Content-Type' => 'application/json', 'X-Request-Correlation-Id' => 'abc-123'], 'abc-123'],
+            'missing' => [['Content-Type' => 'application/json'], null],
+            'empty' => [['X-Request-Correlation-ID' => ''], null],
+        ];
+    }
+
+    /**
      * Test a failed request is not logged here; the plugin owns the single error line
      */
     public function testSearchFailureIsNotLoggedAsError(): void
