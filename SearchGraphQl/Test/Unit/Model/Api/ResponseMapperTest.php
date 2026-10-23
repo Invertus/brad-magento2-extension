@@ -6,7 +6,9 @@ declare(strict_types=1);
 
 namespace BradSearch\SearchGraphQl\Test\Unit\Model\Api;
 
+use BradSearch\SearchGraphQl\Model\Api\Client;
 use BradSearch\SearchGraphQl\Model\Api\ResponseMapper;
+use BradSearch\SearchGraphQl\Model\PopularityExtractor;
 use Magento\Catalog\Api\Data\ProductInterface;
 use Magento\Catalog\Api\Data\ProductSearchResultsInterface;
 use Magento\Catalog\Api\ProductRepositoryInterface;
@@ -156,6 +158,149 @@ class ResponseMapperTest extends TestCase
     }
 
     /**
+     * Test the results page gets the engine's correlation id, AI search state and each shown product's ai_match
+     */
+    public function testMapAddsSearchTrackingForAiSearch(): void
+    {
+        $apiResponse = [
+            'documents' => [
+                ['id' => '100', 'ai_match' => 'exact'],
+                ['id' => '999', 'ai_match' => 'exact'], // not in Magento: not shown, not tracked
+                ['id' => '200', 'ai_match' => 'close'],
+            ],
+            'total' => 3,
+            'ai_search' => ['used' => true, 'match' => 'exact'],
+            Client::RESPONSE_CORRELATION_ID => 'corr-123',
+        ];
+
+        $product1 = $this->createProductMock(100, 'simple', 'SKU-1', 'Product 1', 'product-1');
+        $product2 = $this->createProductMock(200, 'simple', 'SKU-2', 'Product 2', 'product-2');
+        $this->setupProductRepositoryMock([100, 999, 200], [$product1, $product2]);
+
+        $result = $this->subject->map($apiResponse, 18, 1);
+
+        $this->assertSame([
+            'correlation_id' => 'corr-123',
+            'ai_search' => ['used' => true, 'match' => 'exact'],
+            'ai_matches' => [
+                ['product_id' => 100, 'ai_match' => 'exact'],
+                ['product_id' => 200, 'ai_match' => 'close'],
+            ],
+        ], $result['bradsearch_search']);
+    }
+
+    /**
+     * Test a normal (keyword) search only carries the correlation id
+     */
+    public function testMapAddsOnlyCorrelationIdWithoutAiSearch(): void
+    {
+        $apiResponse = [
+            'documents' => [['id' => '100']],
+            'total' => 1,
+            Client::RESPONSE_CORRELATION_ID => 'corr-456',
+        ];
+
+        $product1 = $this->createProductMock(100, 'simple', 'SKU-1', 'Product 1', 'product-1');
+        $this->setupProductRepositoryMock([100], [$product1]);
+
+        $result = $this->subject->map($apiResponse, 18, 1);
+
+        $this->assertSame([
+            'correlation_id' => 'corr-456',
+            'ai_search' => null,
+            'ai_matches' => [],
+        ], $result['bradsearch_search']);
+    }
+
+    /**
+     * Test the AI search state "none" (AI found nothing) reaches the page, with no products
+     */
+    public function testMapAddsAiSearchNoneWithoutProducts(): void
+    {
+        $result = $this->subject->map([
+            'documents' => [],
+            'total' => 0,
+            'ai_search' => ['used' => true, 'match' => 'none'],
+            Client::RESPONSE_CORRELATION_ID => 'corr-789',
+        ], 18, 1);
+
+        $this->assertSame([
+            'correlation_id' => 'corr-789',
+            'ai_search' => ['used' => true, 'match' => 'none'],
+            'ai_matches' => [],
+        ], $result['bradsearch_search']);
+    }
+
+    /**
+     * Test unknown AI values are dropped, so analytics never stores a value it does not know
+     *
+     * @dataProvider invalidAiSearchDataProvider
+     */
+    public function testMapIgnoresInvalidAiSearch(array $aiSearch): void
+    {
+        $apiResponse = [
+            'documents' => [['id' => '100', 'ai_match' => 'exact']],
+            'total' => 1,
+            'ai_search' => $aiSearch,
+            Client::RESPONSE_CORRELATION_ID => 'corr-1',
+        ];
+
+        $product1 = $this->createProductMock(100, 'simple', 'SKU-1', 'Product 1', 'product-1');
+        $this->setupProductRepositoryMock([100], [$product1]);
+
+        $result = $this->subject->map($apiResponse, 18, 1);
+
+        $this->assertNull($result['bradsearch_search']['ai_search']);
+        $this->assertSame([], $result['bradsearch_search']['ai_matches']);
+    }
+
+    /**
+     * Data provider for ai_search values that must not be passed on
+     */
+    public static function invalidAiSearchDataProvider(): array
+    {
+        return [
+            'not used' => [['used' => false, 'match' => 'exact']],
+            'unknown match' => [['used' => true, 'match' => 'maybe']],
+            'used as string' => [['used' => 'true', 'match' => 'exact']],
+        ];
+    }
+
+    /**
+     * Test a product's unknown ai_match is left out while the search keeps its AI state
+     */
+    public function testMapSkipsUnknownProductAiMatch(): void
+    {
+        $apiResponse = [
+            'documents' => [
+                ['id' => '100', 'ai_match' => 'none'],
+                ['id' => '200', 'ai_match' => 'close'],
+            ],
+            'total' => 2,
+            'ai_search' => ['used' => true, 'match' => 'close'],
+        ];
+
+        $product1 = $this->createProductMock(100, 'simple', 'SKU-1', 'Product 1', 'product-1');
+        $product2 = $this->createProductMock(200, 'simple', 'SKU-2', 'Product 2', 'product-2');
+        $this->setupProductRepositoryMock([100, 200], [$product1, $product2]);
+
+        $result = $this->subject->map($apiResponse, 18, 1);
+
+        $this->assertNull($result['bradsearch_search']['correlation_id']);
+        $this->assertSame([['product_id' => 200, 'ai_match' => 'close']], $result['bradsearch_search']['ai_matches']);
+    }
+
+    /**
+     * Test nothing is added when the engine sent neither a correlation id nor AI search state
+     */
+    public function testMapWithoutTrackingDataReturnsNull(): void
+    {
+        $result = $this->subject->getEmptyResults(18, 1);
+
+        $this->assertNull($result['bradsearch_search']);
+    }
+
+    /**
      * Test mapping with various product types
      */
     public function testMapWithVariousProductTypes(): void
@@ -232,7 +377,7 @@ class ResponseMapperTest extends TestCase
     ): MockObject {
         // Use generic mock that allows any method calls
         $product = $this->getMockBuilder(\stdClass::class)
-            ->addMethods(['getId', 'getTypeId', 'getSku', 'getName', 'getUrlKey'])
+            ->addMethods(['getId', 'getTypeId', 'getSku', 'getName', 'getUrlKey', 'getData'])
             ->getMock();
         $product->method('getId')->willReturn($id);
         $product->method('getTypeId')->willReturn($typeId);
@@ -285,7 +430,8 @@ class ResponseMapperTest extends TestCase
         $this->subject = new ResponseMapper(
             $this->productRepositoryMock,
             $this->searchCriteriaBuilderMock,
-            $this->loggerMock
+            $this->loggerMock,
+            new PopularityExtractor()
         );
     }
 }
