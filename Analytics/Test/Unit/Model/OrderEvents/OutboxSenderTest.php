@@ -111,7 +111,7 @@ class OutboxSenderTest extends TestCase
         $this->sender()->sendDue(40);
     }
 
-    public function testA4xxFailsAtOnce(): void
+    public function testARejectedPayloadFailsAtOnce(): void
     {
         $this->outbox->method('claimNext')->willReturnOnConsecutiveCalls($this->row(1), null);
         $this->curl->method('getStatus')->willReturn(400);
@@ -121,14 +121,25 @@ class OutboxSenderTest extends TestCase
         $this->sender()->sendDue(40);
     }
 
-    public function testAMissingApiUrlFailsAtOnceWithoutCalling(): void
+    public function testAMissingApiUrlKeepsTheOrderWaitingWithoutCalling(): void
     {
         $this->apiUrl = '';
-        $this->outbox->method('claimNext')->willReturnOnConsecutiveCalls($this->row(1), null);
+        $this->outbox->expects($this->once())->method('claimNext')->willReturn($this->row(1));
         $this->curl->expects($this->never())->method('post');
-        $this->outbox->expects($this->once())->method('markFailed')->with(1, 'lease-1', 1, 'Analytics API URL is not set', $this->utc(0));
+        $this->outbox->expects($this->once())->method('retryLater')->with(1, 'lease-1', 1, $this->utc(60), 'Analytics API URL is not set', $this->utc(0));
+        $this->outbox->expects($this->never())->method('markFailed');
 
         $this->sender()->sendDue(40);
+    }
+
+    public function testAnEndpointErrorKeepsTheQueueAndStopsTheRun(): void
+    {
+        $this->outbox->expects($this->once())->method('claimNext')->willReturn($this->row(1));
+        $this->curl->method('getStatus')->willReturn(403);
+        $this->outbox->expects($this->once())->method('retryLater')->with(1, 'lease-1', 1, $this->utc(60), 'HTTP 403', $this->utc(0));
+        $this->outbox->expects($this->never())->method('markFailed');
+
+        $this->assertSame(['sent' => 0, 'retry' => 1, 'failed' => 0], $this->sender()->sendDue(40));
     }
 
     public function testDoesNothingWhileAnotherRunHoldsTheLock(): void
@@ -188,13 +199,13 @@ class OutboxSenderTest extends TestCase
         $this->assertSame(10, $options[CURLOPT_TIMEOUT]);
     }
 
-    public function testAStoreWhoseConfigCannotBeReadFailsTheOrderInsteadOfLoopingTheRun(): void
+    public function testAStoreWhoseConfigCannotBeReadWaitsWithItsAttemptCounted(): void
     {
         $curlFactory = $this->createMock(CurlFactory::class);
         $scopeConfig = $this->createMock(ScopeConfigInterface::class);
         $scopeConfig->method('getValue')->willThrowException(new \RuntimeException('store not found'));
-        $this->outbox->method('claimNext')->willReturnOnConsecutiveCalls($this->row(1), null);
-        $this->outbox->expects($this->once())->method('markFailed')->with(1, 'lease-1', 1, 'Analytics API URL is not set', $this->utc(0));
+        $this->outbox->expects($this->once())->method('claimNext')->willReturn($this->row(1));
+        $this->outbox->expects($this->once())->method('retryLater')->with(1, 'lease-1', 1, $this->utc(60), 'Analytics API URL is not set', $this->utc(0));
 
         (new OutboxSender($this->outbox, $curlFactory, $scopeConfig, $this->lockManager, new RetryPolicy(), $this->logger, function () {
             return self::NOW;

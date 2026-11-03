@@ -72,11 +72,12 @@ class OrderCreatedEvent implements ObserverInterface
         }
 
         $storeId = (int) $order->getStoreId();
-        $websiteId = (string) $this->config(self::CONFIG_PATH_WEBSITE_ID, $storeId);
 
         if (!$this->scopeConfig->isSetFlag(self::CONFIG_PATH_ENABLED, ScopeInterface::SCOPE_STORE, $storeId)) {
             return;
         }
+
+        $websiteId = (string) $this->config(self::CONFIG_PATH_WEBSITE_ID, $storeId);
 
         if (trim((string) $this->config(self::CONFIG_PATH_API_URL, $storeId)) === '' || $websiteId === '') {
             $this->logger->debug('BradSearch Analytics: API URL or website ID not configured, order not queued', [

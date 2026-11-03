@@ -22,11 +22,11 @@ class RetryPolicyTest extends TestCase
     {
         $policy = new RetryPolicy();
 
-        foreach ([0, 100, 301, 408, 425, 429, 500, 503] as $status) {
+        foreach ([-1, 0, 100, 301, 401, 403, 404, 408, 425, 429, 500, 503] as $status) {
             $this->assertTrue($policy->isRetryable($status), 'status ' . $status);
         }
 
-        foreach ([-1, 400, 401, 404] as $status) {
+        foreach ([200, 400, 413, 422] as $status) {
             $this->assertFalse($policy->isRetryable($status), 'status ' . $status);
         }
 

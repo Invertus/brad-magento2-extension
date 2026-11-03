@@ -24,7 +24,7 @@ class OutboxSender
     private const LEASE_SECONDS = 120;
     private const SENT_KEEP_DAYS = 7;
     private const FAILED_KEEP_DAYS = 30;
-    // Not a network failure: retrying cannot help, so the order fails at once.
+    // No URL is an endpoint problem like any other: the order waits for it.
     private const STATUS_NOT_CONFIGURED = -1;
     // Browser-like UA: the analytics service drops events whose UA looks like a bot.
     private const USER_AGENT = 'Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36';

@@ -6,7 +6,7 @@
 -->
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Cron:etc/crontab.xsd">
-    <group id="default">
+    <group id="bradsearch_analytics">
         <job name="bradsearch_send_order_events"
              instance="BradSearch\Analytics\Cron\SendOrderEvents"
              method="execute">
