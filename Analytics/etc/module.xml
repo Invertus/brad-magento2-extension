@@ -10,6 +10,9 @@
         <sequence>
             <module name="Magento_StoreGraphQl"/>
             <module name="Magento_Sales"/>
+            <module name="Magento_Quote"/>
+            <module name="Magento_Cron"/>
+            <module name="BradSearch_SearchGraphQl"/>
         </sequence>
     </module>
 </config>
