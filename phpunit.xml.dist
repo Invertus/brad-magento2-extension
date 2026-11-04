@@ -6,6 +6,7 @@
          cacheResultFile=".phpunit.cache/result">
     <testsuites>
         <testsuite name="Unit">
+            <directory>Analytics/Test/Unit</directory>
             <directory>ProductFeatures/Test/Unit</directory>
             <directory>SearchGraphQl/Test/Unit</directory>
         </testsuite>

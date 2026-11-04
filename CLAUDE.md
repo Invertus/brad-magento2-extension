@@ -11,7 +11,7 @@ BradSearch Magento 2 Extension (`bradsearch/magento-extension`) - four independe
 - **SearchGraphQl** - Core module. Intercepts Magento's `products` GraphQL resolver via plugin to route keyword searches through BradSearch API instead of ElasticSuite. Includes real-time product sync via cron that reads ElasticSuite's `catalogsearch_fulltext_cl` changelog table and notifies BradSearch via webhook.
 - **ProductFeatures** - Extends GraphQL product type with additional attributes: `is_in_stock`, `allows_backorders`, `full_url`, `image_optimized`, and dynamic product features.
 - **Autocomplete** - Configuration-only module exposing BradSearch autocomplete widget settings (script URL, public key, config JSON) via GraphQL StoreConfig.
-- **Analytics** - Observes `sales_order_place_after` event to notify BradSearch analytics API of completed orders.
+- **Analytics** - Observes `checkout_submit_all_after` and queues the order-paid event in `bradsearch_order_outbox`; the `bradsearch_send_order_events` cron sends it every minute and retries failures.
 
 ## Commands
 
@@ -60,4 +60,4 @@ Deployment: `./deploy-bradsearch.sh` (use `--dry-run` first, `--compile` for DI 
 - Modules have no inter-dependencies; each can be deployed independently
 - PHP compatibility: 7.4, 8.1, or 8.2
 - Test files and `Test/` directories are excluded from deployment automatically
-- The `bradsearch_sync_state` database table is created via `db_schema.xml` in SearchGraphQl
+- The `bradsearch_sync_state` table (SearchGraphQl) and the `bradsearch_order_outbox` table (Analytics) are created via `db_schema.xml`

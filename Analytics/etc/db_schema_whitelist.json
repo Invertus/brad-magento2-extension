@@ -1,0 +1,24 @@
+{
+    "bradsearch_order_outbox": {
+        "column": {
+            "entity_id": true,
+            "order_id": true,
+            "store_id": true,
+            "body": true,
+            "status": true,
+            "attempts": true,
+            "next_attempt_at": true,
+            "last_error": true,
+            "created_at": true,
+            "updated_at": true
+        },
+        "index": {
+            "BRADSEARCH_ORDER_OUTBOX_STATUS_NEXT_ATTEMPT_AT": true,
+            "BRADSEARCH_ORDER_OUTBOX_STATUS_UPDATED_AT": true
+        },
+        "constraint": {
+            "PRIMARY": true,
+            "BRADSEARCH_ORDER_OUTBOX_ORDER_ID": true
+        }
+    }
+}
