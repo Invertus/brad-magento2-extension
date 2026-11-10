@@ -58,6 +58,6 @@ Deployment: `./deploy-bradsearch.sh` (use `--dry-run` first, `--compile` for DI 
 ## Important Notes
 
 - Modules have no inter-dependencies; each can be deployed independently
-- PHP compatibility: 7.4, 8.1, or 8.2
+- PHP compatibility: see `require.php` in composer.json (PHP 8.5 needs Magento 2.4.9)
 - Test files and `Test/` directories are excluded from deployment automatically
 - The `bradsearch_sync_state` table (SearchGraphQl) and the `bradsearch_order_outbox` table (Analytics) are created via `db_schema.xml`

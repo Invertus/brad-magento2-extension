@@ -7,7 +7,7 @@ Magento 2 modules for integrating BradSearch with your store's GraphQL layer.
 ## Requirements
 
 - Magento 2.4.x
-- PHP 7.4, 8.1, 8.2, 8.3, or 8.4
+- PHP 7.4, 8.1, 8.2, 8.3, 8.4, or 8.5 (PHP 8.5 needs Magento 2.4.9)
 - Composer 2.x
 
 ## Installation
@@ -64,8 +64,7 @@ composer check                # all of the above
 ```
 
 Pre-commit hooks run `phpcbf` + `phpcs` + `phpstan` on staged PHP files.
-Pre-push runs `psalm` + full test suite. CI (GitHub Actions) runs the same
-checks across PHP 7.4 / 8.1 / 8.2 / 8.3 on every PR.
+Pre-push runs `psalm` + full test suite.
 
 ## License
 
