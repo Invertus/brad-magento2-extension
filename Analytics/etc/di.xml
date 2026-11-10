@@ -14,7 +14,19 @@
         </arguments>
     </type>
 
-    <type name="BradSearch\Analytics\Model\EventNotifier">
+    <type name="BradSearch\Analytics\Model\OrderEvents\OrderPaidEventBuilder">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\Analytics\Model\OrderEvents\OutboxSender">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+    <type name="BradSearch\Analytics\Cron\SendOrderEvents">
         <arguments>
             <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>

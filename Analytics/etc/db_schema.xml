@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+/**
+ * Copyright © BradSearch. All rights reserved.
+ */
+-->
+<schema xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Setup/Declaration/Schema/etc/schema.xsd">
+    <table name="bradsearch_order_outbox" resource="default" engine="innodb" comment="BradSearch paid orders waiting to be sent">
+        <column xsi:type="int" name="entity_id" unsigned="true" nullable="false" identity="true" comment="ID"/>
+        <column xsi:type="int" name="order_id" unsigned="true" nullable="false" comment="Order ID"/>
+        <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
+        <column xsi:type="mediumtext" name="body" nullable="false" comment="Event JSON"/>
+        <column xsi:type="varchar" name="status" length="16" nullable="false" default="pending" comment="pending, sent or failed"/>
+        <column xsi:type="smallint" name="attempts" unsigned="true" nullable="false" default="0" comment="Attempts"/>
+        <column xsi:type="datetime" name="next_attempt_at" nullable="false" comment="Next attempt or lease end, UTC"/>
+        <column xsi:type="varchar" name="last_error" length="255" nullable="true" comment="Last error"/>
+        <column xsi:type="datetime" name="created_at" nullable="false" comment="Queued at, UTC"/>
+        <column xsi:type="datetime" name="updated_at" nullable="false" comment="Updated at, UTC"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="entity_id"/>
+        </constraint>
+        <constraint xsi:type="unique" referenceId="BRADSEARCH_ORDER_OUTBOX_ORDER_ID">
+            <column name="order_id"/>
+        </constraint>
+        <index referenceId="BRADSEARCH_ORDER_OUTBOX_STATUS_NEXT_ATTEMPT_AT" indexType="btree">
+            <column name="status"/>
+            <column name="next_attempt_at"/>
+        </index>
+        <index referenceId="BRADSEARCH_ORDER_OUTBOX_STATUS_UPDATED_AT" indexType="btree">
+            <column name="status"/>
+            <column name="updated_at"/>
+        </index>
+    </table>
+</schema>
