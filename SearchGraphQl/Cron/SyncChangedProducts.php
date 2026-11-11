@@ -108,10 +108,12 @@ class SyncChangedProducts
             return;
         }
 
+        // Process each store that has sync enabled
         $pending = [];
         foreach ($this->storeManager->getStores() as $store) {
             $storeId = (int)$store->getId();
 
+            // Check if sync is enabled for this store
             if (!$this->webhookNotifier->isSyncEnabled($storeId)) {
                 continue;
             }
@@ -156,9 +158,11 @@ class SyncChangedProducts
      */
     private function collectStore(int $storeId, int $currentVersion): ?array
     {
+        // Get or create sync state for this store
         $syncState = $this->getOrCreateSyncState($storeId, $currentVersion);
         $lastVersionId = $syncState->getLastVersionId();
 
+        // Check if there are new changes
         if ($currentVersion <= $lastVersionId) {
             $this->logger->debug('BradSearch Sync: No new changes', [
                 'store_id' => $storeId,
@@ -168,6 +172,7 @@ class SyncChangedProducts
             return null;
         }
 
+        // Get changed product IDs
         $productIds = $this->changelogReader->getChangedProductIds($lastVersionId, $currentVersion);
 
         if (empty($productIds)) {
@@ -246,6 +251,7 @@ class SyncChangedProducts
             return;
         }
 
+        // Send webhook notification
         $success = $this->webhookNotifier->notify($productIds, $storeId, $currentVersion);
 
         if ($success) {
@@ -253,6 +259,7 @@ class SyncChangedProducts
             if ($filtered !== null) {
                 $this->changeFilter->store($filtered['hashes'], $storeId);
             }
+            // Update sync state only on successful notification
             $this->updateSyncState($syncState, $currentVersion);
             $this->logger->info('BradSearch Sync: Successfully notified', [
                 'store_id' => $storeId,
