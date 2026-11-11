@@ -61,7 +61,7 @@ class SyncChangedProductsTest extends TestCase
     {
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
             ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
-        $this->notifier->expects($this->once())->method('notify')->with([11], 1, self::CURRENT_VERSION)->willReturn(true);
+        $this->notifier->expects($this->once())->method('notify')->with([11], 1, self::CURRENT_VERSION, true)->willReturn(true);
         $this->changeFilter->expects($this->once())->method('store')->with([11 => 'h11'], 1);
 
         $this->cron([1])->execute();
@@ -94,7 +94,7 @@ class SyncChangedProductsTest extends TestCase
     public function testABrokenFilterSendsEveryChangelogProductAndStoresNoHash(): void
     {
         $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('table missing'));
-        $this->notifier->expects($this->once())->method('notify')->with([10, 11, 12], 1, self::CURRENT_VERSION)
+        $this->notifier->expects($this->once())->method('notify')->with([10, 11, 12], 1, self::CURRENT_VERSION, false)
             ->willReturn(true);
         $this->changeFilter->expects($this->never())->method('store');
 

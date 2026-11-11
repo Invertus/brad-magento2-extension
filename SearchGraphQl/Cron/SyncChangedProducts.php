@@ -252,7 +252,7 @@ class SyncChangedProducts
         }
 
         // Send webhook notification
-        $success = $this->webhookNotifier->notify($productIds, $storeId, $currentVersion);
+        $success = $this->webhookNotifier->notify($productIds, $storeId, $currentVersion, $filtered !== null);
 
         if ($success) {
             // A stored hash means BradSearch was told, so it is written only after the 2xx.

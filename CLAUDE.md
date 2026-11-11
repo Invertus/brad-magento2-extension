@@ -64,3 +64,5 @@ Deployment: `./deploy-bradsearch.sh` (use `--dry-run` first, `--compile` for DI 
 - The `bradsearch_sync_state` and `bradsearch_product_state` tables (SearchGraphQl) and the `bradsearch_order_outbox` table (Analytics) are created via `db_schema.xml`
 - A new attribute that the sync always reads (`BradProducts::COLLECTION_ATTRIBUTES`, `ProductDataLoader::WHITELIST_ATTRIBUTES`) must also go into `ChangeFilter`'s `attributeCodes` in `SearchGraphQl/etc/di.xml`; `ChangeFilterConfigTest` fails otherwise
 - After installing the release that adds `bradsearch_product_state`, the first wave sends every changelog product once, because no hashes are stored yet
+- A filtered push carries `X-BradSearch-Changes-Only: 1`; the backend then does not drop the same ids a minute later as a duplicate. An unfiltered push (filter failed) sends `0`
+- Known limit: `bradProducts` reads categories from the scheduled category index (`catalog_category_product_index_store*`). A category change is sent at once; if the backend fetches before that index catches up, it keeps the old categories until the nightly sync

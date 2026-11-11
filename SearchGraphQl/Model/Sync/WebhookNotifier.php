@@ -23,6 +23,12 @@ class WebhookNotifier
     private const CONFIG_PATH_SECURE_TOKEN = 'bradsearch_search/sync/secure_token';
     private const CONFIG_PATH_SYNC_ENABLED = 'bradsearch_search/sync/enabled';
 
+    /**
+     * Tells BradSearch the ids passed the change filter, so the same ids a minute later are a new
+     * change and must not be dropped as a duplicate push.
+     */
+    private const HEADER_CHANGES_ONLY = 'X-BradSearch-Changes-Only';
+
     private const TIMEOUT = 30;
     private const CONNECT_TIMEOUT = 10;
 
@@ -85,9 +91,10 @@ class WebhookNotifier
      * @param array $productIds Array of product IDs that changed
      * @param int $storeId Store ID
      * @param int $versionId Current changelog version ID
+     * @param bool $changesOnly True when the change filter kept only products whose indexed data changed
      * @return bool True on success, false on failure
      */
-    public function notify(array $productIds, int $storeId, int $versionId): bool
+    public function notify(array $productIds, int $storeId, int $versionId, bool $changesOnly = false): bool
     {
         if (empty($productIds)) {
             $this->logger->debug('BradSearch: No products to notify');
@@ -110,6 +117,8 @@ class WebhookNotifier
 
         try {
             $this->setupCurl($secureToken);
+            // Always set, never only added: the Curl client is shared, so a header from an earlier push stays.
+            $this->curl->addHeader(self::HEADER_CHANGES_ONLY, $changesOnly ? '1' : '0');
             $this->curl->post($webhookUrl, json_encode($payload));
 
             $statusCode = $this->curl->getStatus();
