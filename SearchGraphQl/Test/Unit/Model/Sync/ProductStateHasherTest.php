@@ -74,6 +74,40 @@ class ProductStateHasherTest extends TestCase
         );
     }
 
+    public function testADefaultScopeAttributeChangesTheHashEvenWhenTheStoreOverridesIt(): void
+    {
+        $before = $this->state();
+        $after = $before;
+        $after['attributes'][10][73][0] = md5('Drill renamed');
+
+        $this->assertNotSame(
+            $this->hasher->hash($before, 10, self::STORE, self::WEBSITE, self::TODAY, [73]),
+            $this->hasher->hash($after, 10, self::STORE, self::WEBSITE, self::TODAY, [73])
+        );
+    }
+
+    public function testADefaultScopeAttributeStillChangesTheHashAtStoreScope(): void
+    {
+        $before = $this->state();
+        $after = $before;
+        $after['attributes'][10][73][self::STORE] = md5('Gręžtuvas 2');
+
+        $this->assertNotSame(
+            $this->hasher->hash($before, 10, self::STORE, self::WEBSITE, self::TODAY, [73]),
+            $this->hasher->hash($after, 10, self::STORE, self::WEBSITE, self::TODAY, [73])
+        );
+    }
+
+    public function testADefaultScopeAttributeWithoutADefaultRowHashesStably(): void
+    {
+        $state = $this->state();
+
+        $this->assertSame(
+            $this->hasher->hash($state, 10, self::STORE, self::WEBSITE, self::TODAY, [999, 73]),
+            $this->hasher->hash($state, 10, self::STORE, self::WEBSITE, self::TODAY, [73, 999])
+        );
+    }
+
     public function testAStoreOverrideWithANullValueStillWinsOverTheDefault(): void
     {
         $before = $this->state();

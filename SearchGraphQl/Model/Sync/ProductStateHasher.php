@@ -24,14 +24,23 @@ class ProductStateHasher
      * @param int $storeId
      * @param int $websiteId Website of the store view, for catalog rule prices
      * @param string $date Today in the store view's timezone (Y-m-d), for catalog rule prices
+     * @param int[] $defaultScopeAttributeIds Attributes whose default value is hashed too, even under a store value
      * @return string
      * @throws \JsonException
      */
-    public function hash(array $state, int $productId, int $storeId, int $websiteId, string $date): string
-    {
+    public function hash(
+        array $state,
+        int $productId,
+        int $storeId,
+        int $websiteId,
+        string $date,
+        array $defaultScopeAttributeIds = []
+    ): string {
+        $values = $state['attributes'][$productId] ?? [];
         $data = [
             'entity' => $state['entity'][$productId] ?? null,
-            'attributes' => $this->effectiveAttributes($state['attributes'][$productId] ?? [], $storeId),
+            'attributes' => $this->effectiveAttributes($values, $storeId),
+            'defaults' => $this->defaultValues($values, $defaultScopeAttributeIds),
             'rule' => $state['rules'][$productId][$websiteId][$date] ?? null,
         ];
 
@@ -64,5 +73,25 @@ class ProductStateHasher
         ksort($effective);
 
         return $effective;
+    }
+
+    /**
+     * Default-scope values of attributes a price calculator reads from the default-scope product.
+     *
+     * @param array<int, array<int, string|null>> $valuesByAttribute attribute id => store id => value hash
+     * @param int[] $attributeIds
+     * @return array<int, string|null>
+     */
+    private function defaultValues(array $valuesByAttribute, array $attributeIds): array
+    {
+        $defaults = [];
+        foreach ($attributeIds as $attributeId) {
+            if (isset($valuesByAttribute[$attributeId]) && array_key_exists(0, $valuesByAttribute[$attributeId])) {
+                $defaults[$attributeId] = $valuesByAttribute[$attributeId][0];
+            }
+        }
+        ksort($defaults);
+
+        return $defaults;
     }
 }

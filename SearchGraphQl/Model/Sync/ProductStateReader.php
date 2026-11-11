@@ -77,6 +77,24 @@ class ProductStateReader
     }
 
     /**
+     * Ids of the given product attribute codes.
+     *
+     * @param string[] $attributeCodes
+     * @return int[]
+     */
+    public function getAttributeIds(array $attributeCodes): array
+    {
+        $connection = $this->connection();
+        $select = $connection->select()
+            ->from(['ea' => $this->table('eav_attribute')], ['attribute_id'])
+            ->joinInner(['et' => $this->table('eav_entity_type')], 'et.entity_type_id = ea.entity_type_id', [])
+            ->where('et.entity_type_code = ?', 'catalog_product')
+            ->where('ea.attribute_code IN (?)', array_values($attributeCodes));
+
+        return array_map('intval', $connection->fetchCol($select));
+    }
+
+    /**
      * Read the indexed rows of a batch of products.
      *
      * @param int[] $productIds

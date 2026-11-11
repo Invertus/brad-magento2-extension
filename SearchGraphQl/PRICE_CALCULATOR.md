@@ -176,7 +176,9 @@ attributes, catalog rule prices and every searchable or filterable
 attribute. If your calculator reads another attribute (a weight used for a
 shipping markup, for example), a change to it would never be sent.
 Implement `BradSearch\SearchGraphQl\Api\ProductHashAttributeProviderInterface`
-and register it:
+and register it. The attributes it returns are also hashed at default scope,
+so list every attribute your calculator reads from the default-scope product
+(`price` and `tax_class_id` too, if it reads them there):
 
 ```xml
 <type name="BradSearch\SearchGraphQl\Model\Sync\ChangeFilter">

@@ -161,6 +161,38 @@ class ChangeFilterTest extends TestCase
             ->filter([1 => [10], 2 => [10]]);
     }
 
+    public function testProviderAttributesAreAlsoHashedAtDefaultScope(): void
+    {
+        $provider = $this->createMock(ProductHashAttributeProviderInterface::class);
+        $provider->method('getAttributeCodes')->willReturn(['weight', 'tax_class_id']);
+        $this->reader = $this->createMock(ProductStateReader::class);
+        $this->reader->method('getAttributeIdsByType')->willReturn([]);
+        $this->reader->method('read')->willReturn([]);
+        $this->reader->expects($this->once())->method('getAttributeIds')
+            ->with(['weight', 'tax_class_id'])
+            ->willReturn([80, 132]);
+
+        $defaultScopeIds = [];
+        $hasher = $this->createMock(ProductStateHasher::class);
+        $hasher->method('hash')->willReturnCallback(
+            function (array $state, int $productId, int $storeId, int $websiteId, string $date, array $ids) use (&$defaultScopeIds): string {
+                $defaultScopeIds = $ids;
+                return 'h';
+            }
+        );
+
+        $this->filter(['name' => 'name'], ['shipping' => $provider], $hasher)->filter([1 => [10]]);
+
+        $this->assertSame([80, 132], $defaultScopeIds);
+    }
+
+    public function testWithoutProvidersNothingIsHashedAtDefaultScope(): void
+    {
+        $this->reader->expects($this->never())->method('getAttributeIds');
+
+        $this->filter(['name' => 'name'])->filter([1 => [10]]);
+    }
+
     public function testAProviderOfTheWrongTypeIsRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);

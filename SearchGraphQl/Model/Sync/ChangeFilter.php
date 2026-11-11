@@ -120,7 +120,13 @@ class ChangeFilter
             return array_values(array_unique($dates));
         }, $ruleDates);
 
-        $attributeIds = $this->reader->getAttributeIdsByType($this->attributeCodes($storeIds));
+        $providerCodes = $this->providerCodes($storeIds);
+        $attributeIds = $this->reader->getAttributeIdsByType(
+            array_values(array_unique(array_merge($this->attributeCodes, $providerCodes)))
+        );
+        // A price calculator may read these from the default-scope product, so a default change counts
+        // even when the store view has its own value.
+        $defaultScopeIds = empty($providerCodes) ? [] : $this->reader->getAttributeIds($providerCodes);
 
         $wanted = [];
         $allIds = [];
@@ -144,7 +150,7 @@ class ChangeFilter
                         continue;
                     }
 
-                    $hash = $this->hasher->hash($state, $productId, $storeId, $websiteId, $date);
+                    $hash = $this->hasher->hash($state, $productId, $storeId, $websiteId, $date, $defaultScopeIds);
                     if (($stored[$storeId][$productId] ?? null) !== $hash) {
                         $result[$storeId]['changed'][] = $productId;
                         $result[$storeId]['hashes'][$productId] = $hash;
@@ -181,16 +187,16 @@ class ChangeFilter
      * @param int[] $storeIds
      * @return string[]
      */
-    private function attributeCodes(array $storeIds): array
+    private function providerCodes(array $storeIds): array
     {
-        $codes = [$this->attributeCodes];
+        $codes = [];
         foreach ($this->attributeProviders as $provider) {
             foreach ($storeIds as $storeId) {
                 $codes[] = $provider->getAttributeCodes($storeId);
             }
         }
 
-        return array_values(array_unique(array_merge(...$codes)));
+        return array_values(array_unique(array_merge([], ...$codes)));
     }
 
     /**

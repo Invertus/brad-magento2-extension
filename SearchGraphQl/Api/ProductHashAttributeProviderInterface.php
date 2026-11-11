@@ -13,6 +13,9 @@ namespace BradSearch\SearchGraphQl\Api;
  * whose PriceCalculatorInterface reads attributes that are neither searchable nor filterable
  * (a weight used for a shipping markup, for example) registers a provider in di.xml, on the
  * attributeProviders argument of BradSearch\SearchGraphQl\Model\Sync\ChangeFilter.
+ *
+ * These attributes are hashed at default scope too, even where a store view has its own value,
+ * because a calculator may read them from the default-scope product.
  */
 interface ProductHashAttributeProviderInterface
 {
