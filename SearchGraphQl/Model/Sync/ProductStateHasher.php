@@ -41,7 +41,7 @@ class ProductStateHasher
             $data[$part] = $values;
         }
 
-        return md5(json_encode($data, JSON_THROW_ON_ERROR));
+        return hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
     }
 
     /**
