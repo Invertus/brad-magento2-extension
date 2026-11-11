@@ -1,0 +1,30 @@
+{
+    "bradsearch_sync_state": {
+        "column": {
+            "id": true,
+            "store_id": true,
+            "last_version_id": true,
+            "last_sync_at": true,
+            "created_at": true,
+            "updated_at": true
+        },
+        "index": {
+            "BRADSEARCH_SYNC_STATE_LAST_VERSION_ID": true
+        },
+        "constraint": {
+            "PRIMARY": true,
+            "BRADSEARCH_SYNC_STATE_STORE_ID": true
+        }
+    },
+    "bradsearch_product_state": {
+        "column": {
+            "store_id": true,
+            "product_id": true,
+            "hash": true,
+            "updated_at": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    }
+}

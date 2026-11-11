@@ -1,0 +1,68 @@
+<?php
+/**
+ * Copyright (c) BradSearch. All rights reserved.
+ */
+declare(strict_types=1);
+
+namespace BradSearch\SearchGraphQl\Model\Sync;
+
+/**
+ * Turns what ProductStateReader read for one product into one hash per store view.
+ *
+ * Two hashes are equal only when everything BradSearch indexes for that store view is equal,
+ * so a changelog entry whose hash did not move is a rewrite of the same data.
+ */
+class ProductStateHasher
+{
+    private const LIST_PARTS = ['categories', 'websites', 'stock', 'children', 'bundle'];
+
+    /**
+     * Hash one product's indexed data as one store view sees it.
+     *
+     * @param array<string, array<int, mixed>> $state Output of ProductStateReader::read()
+     * @param int $productId
+     * @param int $storeId
+     * @param int $websiteId Website of the store view, for catalog rule prices
+     * @param string $date Today in the store view's timezone (Y-m-d), for catalog rule prices
+     * @return string
+     * @throws \JsonException
+     */
+    public function hash(array $state, int $productId, int $storeId, int $websiteId, string $date): string
+    {
+        $data = [
+            'entity' => $state['entity'][$productId] ?? null,
+            'attributes' => $this->effectiveAttributes($state['attributes'][$productId] ?? [], $storeId),
+            'rule' => $state['rules'][$productId][$websiteId][$date] ?? null,
+        ];
+
+        foreach (self::LIST_PARTS as $part) {
+            $values = array_map('strval', $state[$part][$productId] ?? []);
+            sort($values, SORT_STRING);
+            $data[$part] = $values;
+        }
+
+        return md5(json_encode($data, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Pick each attribute's value the way Magento resolves it: a store row wins, even a NULL one.
+     *
+     * @param array<int, array<int, string|null>> $valuesByAttribute attribute id => store id => value hash
+     * @param int $storeId
+     * @return array<int, string|null>
+     */
+    private function effectiveAttributes(array $valuesByAttribute, int $storeId): array
+    {
+        $effective = [];
+        foreach ($valuesByAttribute as $attributeId => $valuesByStore) {
+            if (array_key_exists($storeId, $valuesByStore)) {
+                $effective[$attributeId] = $valuesByStore[$storeId];
+            } elseif (array_key_exists(0, $valuesByStore)) {
+                $effective[$attributeId] = $valuesByStore[0];
+            }
+        }
+        ksort($effective);
+
+        return $effective;
+    }
+}
