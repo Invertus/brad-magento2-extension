@@ -168,6 +168,26 @@ Override the default preference:
 </config>
 ```
 
+### 5. Report extra price inputs to real-time sync
+
+Real-time sync sends a product only when the data BradSearch indexes has
+changed (`Model/Sync/ChangeFilter.php`). It already watches the price
+attributes, catalog rule prices and every searchable or filterable
+attribute. If your calculator reads another attribute (a weight used for a
+shipping markup, for example), a change to it would never be sent.
+Implement `BradSearch\SearchGraphQl\Api\ProductHashAttributeProviderInterface`
+and register it:
+
+```xml
+<type name="BradSearch\SearchGraphQl\Model\Sync\ChangeFilter">
+    <arguments>
+        <argument name="attributeProviders" xsi:type="array">
+            <item name="your_price_inputs" xsi:type="object"><Vendor>\BradSearchPrice\Model\YourAttributeProvider</item>
+        </argument>
+    </arguments>
+</type>
+```
+
 ### Enable, compile, verify
 
 ```bash
