@@ -201,14 +201,19 @@ class ChangeFilter
     private function loadStored(array $productIds, array $storeIds): array
     {
         $connection = $this->resource->getConnection();
-        $select = $connection->select()
-            ->from($this->resource->getTableName(self::STATE_TABLE), ['store_id', 'product_id', 'hash'])
-            ->where('store_id IN (?)', $storeIds)
-            ->where('product_id IN (?)', $productIds);
+        $table = $this->resource->getTableName(self::STATE_TABLE);
 
         $stored = [];
-        foreach ($connection->fetchAll($select) as $row) {
-            $stored[(int)$row['store_id']][(int)$row['product_id']] = (string)$row['hash'];
+        // One query per store: with both columns as IN lists MariaDB scanned the whole table.
+        foreach ($storeIds as $storeId) {
+            $select = $connection->select()
+                ->from($table, ['store_id', 'product_id', 'hash'])
+                ->where('store_id = ?', $storeId)
+                ->where('product_id IN (?)', $productIds);
+
+            foreach ($connection->fetchAll($select) as $row) {
+                $stored[(int)$row['store_id']][(int)$row['product_id']] = (string)$row['hash'];
+            }
         }
 
         return $stored;
