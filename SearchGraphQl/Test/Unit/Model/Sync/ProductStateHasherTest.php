@@ -127,7 +127,7 @@ class ProductStateHasherTest extends TestCase
         $this->assertNotSame($this->hash($before), $this->hash($after));
     }
 
-    public function testEntityCategoryWebsiteStockAndChildChangesChangeTheHash(): void
+    public function testEntityCategoryWebsiteStockChildAndBundleChangesChangeTheHash(): void
     {
         $before = $this->state();
         $changes = [
@@ -136,6 +136,7 @@ class ProductStateHasherTest extends TestCase
             'websites' => ['1'],
             'stock' => ['0|0'],
             'children' => ['11', '12', '13'],
+            'bundle' => ['1|14|1.0000|0|0.000000'],
         ];
 
         foreach ($changes as $part => $value) {
@@ -223,6 +224,7 @@ class ProductStateHasherTest extends TestCase
             'websites' => [10 => ['1', '3']],
             'stock' => [10 => ['0|1']],
             'children' => [10 => ['11', '12']],
+            'bundle' => [10 => []],
             'categoryIndex' => [10 => [self::STORE => ['2', '7', '8'], self::OTHER_STORE => ['2', '7', '8']]],
             'rules' => [10 => [self::WEBSITE => [self::TODAY => '90.000000']]],
         ];

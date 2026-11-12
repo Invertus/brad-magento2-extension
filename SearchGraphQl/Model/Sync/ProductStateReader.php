@@ -16,8 +16,8 @@ use Magento\Framework\DB\Sql\Expression;
  *
  * Covers every table that feeds the catalogsearch_fulltext changelog and reaches the
  * bradProducts response: the entity row, indexed EAV values, categories, websites, configurable
- * children and catalog rule prices. Stock does not feed that changelog, but it is read too, so a
- * stock change still goes out with the next changelog entry for the product.
+ * children, bundle selections and catalog rule prices. Stock does not feed that changelog, but it
+ * is read too, so a stock change still goes out with the next changelog entry for the product.
  *
  * bradProducts reads categories from the scheduled category index, which can lag the assignment.
  * Both are read, so a product sent before that index caught up is sent again with its next
@@ -125,6 +125,7 @@ class ProductStateReader
             'websites' => $this->readList('catalog_product_website', 'product_id', 'website_id', $productIds),
             'stock' => $this->readStock($productIds),
             'children' => $this->readList('catalog_product_super_link', 'parent_id', 'product_id', $productIds),
+            'bundle' => $this->readBundleSelections($productIds),
             'rules' => $this->readRulePrices($productIds, $ruleDates),
         ];
     }
@@ -274,6 +275,41 @@ class ProductStateReader
         }
 
         return $categories;
+    }
+
+    /**
+     * @param int[] $productIds
+     * @return array<int, string[]>
+     */
+    private function readBundleSelections(array $productIds): array
+    {
+        if (!$this->exists('catalog_product_bundle_selection')) {
+            return [];
+        }
+
+        $select = $this->connection()->select()
+            ->from($this->table('catalog_product_bundle_selection'), [
+                'parent_product_id',
+                'option_id',
+                'product_id',
+                'selection_qty',
+                'selection_price_type',
+                'selection_price_value',
+            ])
+            ->where('parent_product_id IN (?)', $productIds);
+
+        $selections = [];
+        foreach ($this->connection()->fetchAll($select) as $row) {
+            $selections[(int)$row['parent_product_id']][] = implode('|', [
+                $row['option_id'],
+                $row['product_id'],
+                $row['selection_qty'],
+                $row['selection_price_type'],
+                $row['selection_price_value'],
+            ]);
+        }
+
+        return $selections;
     }
 
     /**
