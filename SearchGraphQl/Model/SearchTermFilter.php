@@ -16,6 +16,11 @@ class SearchTermFilter
         '~\.(php\d?|aspx?|jsp|cgi|xml|png|jpe?g|gif|svg|webp|ico|pdf)$~i',
         '~://~',
         '~(^|[^a-z0-9])www\.~i',
+        '~^/?(catalog|catalogsearch|checkout|customer|sales|wishlist|review|cms|contact|newsletter|sendfriend|productalert|paypal|emailreport|erpext|adeoweb_autorelated)/~i',
+        '~(^|/)\.(env|git)\b|wp-(json|admin|content|includes|login)|^/?(wp|wordpress)/?$~i',
+        '~(^|/)(proc/self|var/run/secrets|\.aws|\.svn|\.terraform|_debugbar|telescope|storage/logs)(/|$)'
+        . '|\.(py|key|log|toml|ya?ml|env|prisma|tfstate|otf|ttf|woff2?)$'
+        . '|^/?api/|^/?(site|blog|news|press|admin)/$|^/?eml/~i',
     ];
 
     /**
