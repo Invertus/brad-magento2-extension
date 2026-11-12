@@ -14,7 +14,7 @@ namespace BradSearch\SearchGraphQl\Model\Sync;
  */
 class ProductStateHasher
 {
-    private const LIST_PARTS = ['categories', 'websites', 'stock', 'children', 'bundle'];
+    private const LIST_PARTS = ['categories', 'websites', 'stock', 'children'];
 
     /**
      * Hash one product's indexed data as one store view sees it.
@@ -42,15 +42,26 @@ class ProductStateHasher
             'attributes' => $this->effectiveAttributes($values, $storeId),
             'defaults' => $this->defaultValues($values, $defaultScopeAttributeIds),
             'rule' => $state['rules'][$productId][$websiteId][$date] ?? null,
+            'categoryIndex' => $this->sorted($state['categoryIndex'][$productId][$storeId] ?? []),
         ];
 
         foreach (self::LIST_PARTS as $part) {
-            $values = array_map('strval', $state[$part][$productId] ?? []);
-            sort($values, SORT_STRING);
-            $data[$part] = $values;
+            $data[$part] = $this->sorted($state[$part][$productId] ?? []);
         }
 
         return hash('sha256', json_encode($data, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param array<int, string|int> $values
+     * @return string[]
+     */
+    private function sorted(array $values): array
+    {
+        $values = array_map('strval', $values);
+        sort($values, SORT_STRING);
+
+        return $values;
     }
 
     /**
