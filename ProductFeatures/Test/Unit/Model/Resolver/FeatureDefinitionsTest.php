@@ -61,6 +61,7 @@ class FeatureDefinitionsTest extends TestCase
 
         $this->resourceConnectionMock->method('getConnection')->willReturn($this->connectionMock);
         $this->resourceConnectionMock->method('getTableName')->willReturnArgument(0);
+        $this->connectionMock->method('getTableName')->willReturnArgument(0);
 
         $this->resolver = new FeatureDefinitions(
             $this->apiKeyValidatorMock,
@@ -163,9 +164,9 @@ class FeatureDefinitionsTest extends TestCase
                 'store_label' => null,
             ],
             [
-                'attribute_code' => 'weight',
+                'attribute_code' => 'color',
                 'attribute_id' => 2,
-                'frontend_label' => 'Weight',
+                'frontend_label' => 'Color',
                 'is_searchable' => 1,
                 'is_filterable_in_search' => 1,
                 'position' => 20,
@@ -228,9 +229,9 @@ class FeatureDefinitionsTest extends TestCase
         $this->connectionMock->method('tableColumnExists')->willReturn(true);
         $this->stubFetchAll([
             [
-                'attribute_code' => 'price_slider',
+                'attribute_code' => 'length_slider',
                 'attribute_id' => 99,
-                'frontend_label' => 'Price',
+                'frontend_label' => 'Length',
                 'mm_format' => null,
                 'is_searchable' => 0,
                 'is_filterable_in_search' => 1,

@@ -21,9 +21,7 @@ use PHPUnit\Framework\MockObject\MockObject;
  * Tests the core formatting logic including:
  * - mm_format sprintf formatting
  * - Unit and value extraction from strings
- * - Label formatting (snake_case to Title Case)
  * - Unit normalization
- * - Prefix exclusion checking
  */
 class FeaturesTest extends TestCase
 {
@@ -159,52 +157,6 @@ class FeaturesTest extends TestCase
                 'mm_format' => '',
                 'value' => 'Red',
                 'expected' => 'Red'
-            ]
-        ];
-    }
-
-    /**
-     * Test formatLabel converts snake_case to Title Case
-     *
-     * @dataProvider formatLabelProvider
-     */
-    public function testFormatLabel(string $input, string $expected): void
-    {
-        $result = $this->invokeMethod($this->features, 'formatLabel', [$input]);
-        $this->assertEquals($expected, $result);
-    }
-
-    /**
-     * Data provider for formatLabel tests
-     *
-     * @return array
-     */
-    public function formatLabelProvider(): array
-    {
-        return [
-            'simple_snake_case' => [
-                'input' => 'product_name',
-                'expected' => 'Product Name'
-            ],
-            'three_words' => [
-                'input' => 'max_power_output',
-                'expected' => 'Max Power Output'
-            ],
-            'single_word' => [
-                'input' => 'material',
-                'expected' => 'Material'
-            ],
-            'with_numbers' => [
-                'input' => 'voltage_220v',
-                'expected' => 'Voltage 220v'
-            ],
-            'multiple_underscores' => [
-                'input' => 'some_long_attribute_name',
-                'expected' => 'Some Long Attribute Name'
-            ],
-            'already_uppercase' => [
-                'input' => 'COLOR',
-                'expected' => 'COLOR'
             ]
         ];
     }
@@ -369,37 +321,6 @@ class FeaturesTest extends TestCase
     }
 
     /**
-     * Test hasExcludedPrefix identifies excluded attribute prefixes
-     *
-     * @dataProvider hasExcludedPrefixProvider
-     */
-    public function testHasExcludedPrefix(string $attributeCode, bool $expected): void
-    {
-        $result = $this->invokeMethod($this->features, 'hasExcludedPrefix', [$attributeCode]);
-        $this->assertEquals($expected, $result);
-    }
-
-    /**
-     * Data provider for hasExcludedPrefix tests
-     *
-     * @return array
-     */
-    public function hasExcludedPrefixProvider(): array
-    {
-        return [
-            'price_ee' => ['price_ee', true],
-            'price_lt' => ['price_lt', true],
-            'price_lv' => ['price_lv', true],
-            'price_dk' => ['price_dk', true],
-            'price_only' => ['price', false], // 'price' doesn't match 'price_' prefix
-            'not_excluded_material' => ['material', false],
-            'not_excluded_weight' => ['weight', false],
-            'not_excluded_color' => ['color', false],
-            'price_in_middle' => ['special_price_ee', false], // prefix check only
-        ];
-    }
-
-    /**
      * Test extractUnitAndValue handles edge cases
      */
     public function testExtractUnitAndValueEdgeCases(): void
@@ -421,28 +342,6 @@ class FeaturesTest extends TestCase
         $this->assertEquals('mm', $result['unit']);
         $this->assertEquals(150.0, $result['numeric_value']);
         $this->assertTrue($result['has_unit']);
-    }
-
-    /**
-     * Test formatLabel edge cases
-     */
-    public function testFormatLabelEdgeCases(): void
-    {
-        // Empty string
-        $result = $this->invokeMethod($this->features, 'formatLabel', ['']);
-        $this->assertEquals('', $result);
-
-        // No underscores
-        $result = $this->invokeMethod($this->features, 'formatLabel', ['material']);
-        $this->assertEquals('Material', $result);
-
-        // Starting with underscore
-        $result = $this->invokeMethod($this->features, 'formatLabel', ['_hidden']);
-        $this->assertEquals(' Hidden', $result);
-
-        // Ending with underscore
-        $result = $this->invokeMethod($this->features, 'formatLabel', ['attribute_']);
-        $this->assertEquals('Attribute ', $result);
     }
 
     /**

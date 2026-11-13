@@ -543,6 +543,8 @@ class UpdateConfigTest extends TestCase
     public function testValidationAllowsEmptyUrl(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        // A non-empty current value, so saving '' is a change and not "No change."
+        $this->scopeConfig->method('getValue')->willReturn('https://old.example.com');
 
         $this->configWriter->expects($this->once())->method('save');
 
@@ -576,6 +578,8 @@ class UpdateConfigTest extends TestCase
     public function testValidationAllowsEmptyJsonValue(): void
     {
         $this->apiKeyValidator->method('isValidRequest')->willReturn(true);
+        // A non-empty current value, so saving '' is a change and not "No change."
+        $this->scopeConfig->method('getValue')->willReturn('{"existing":"data"}');
 
         $this->configWriter->expects($this->once())->method('save');
 
