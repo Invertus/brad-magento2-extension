@@ -44,6 +44,16 @@ class HeldProductsTest extends TestCase
         $this->held()->update(1, [], []);
     }
 
+    public function testHeldLongerThanReturnsProductIds(): void
+    {
+        $select = $this->createMock(\Magento\Framework\DB\Select::class);
+        $select->method($this->anything())->willReturnSelf();
+        $this->connection->method('select')->willReturn($select);
+        $this->connection->method('fetchCol')->willReturn(['11', '12']);
+
+        $this->assertSame([11, 12], $this->held()->heldLongerThan(1, 15));
+    }
+
     private function held(): HeldProducts
     {
         $resource = $this->createMock(ResourceConnection::class);

@@ -9,10 +9,10 @@ namespace BradSearch\SearchGraphQl\Cron;
 use BradSearch\SearchGraphQl\Model\ResourceModel\SyncState as SyncStateResource;
 use BradSearch\SearchGraphQl\Model\SyncState;
 use BradSearch\SearchGraphQl\Model\SyncStateFactory;
-use BradSearch\SearchGraphQl\Model\Sync\CategoryIndexState;
 use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
+use BradSearch\SearchGraphQl\Model\Sync\IndexState;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -61,9 +61,9 @@ class SyncChangedProducts
     private ChangeFilter $changeFilter;
 
     /**
-     * @var CategoryIndexState
+     * @var IndexState
      */
-    private CategoryIndexState $categoryIndexState;
+    private IndexState $indexState;
 
     /**
      * @var HeldProducts
@@ -73,7 +73,7 @@ class SyncChangedProducts
     /**
      * @var int
      */
-    private int $heldWarningMinutes;
+    private int $maxHoldMinutes;
 
     /**
      * @var bool
@@ -88,9 +88,9 @@ class SyncChangedProducts
      * @param StoreManagerInterface $storeManager
      * @param LoggerInterface $logger
      * @param ChangeFilter $changeFilter
-     * @param CategoryIndexState $categoryIndexState
+     * @param IndexState $indexState
      * @param HeldProducts $heldProducts
-     * @param int $heldWarningMinutes A product held longer than this logs a warning on every run
+     * @param int $maxHoldMinutes A product held longer than this is sent anyway, with a warning
      */
     public function __construct(
         ChangelogReader $changelogReader,
@@ -100,9 +100,9 @@ class SyncChangedProducts
         StoreManagerInterface $storeManager,
         LoggerInterface $logger,
         ChangeFilter $changeFilter,
-        CategoryIndexState $categoryIndexState,
+        IndexState $indexState,
         HeldProducts $heldProducts,
-        int $heldWarningMinutes = 15
+        int $maxHoldMinutes = 15
     ) {
         $this->changelogReader = $changelogReader;
         $this->webhookNotifier = $webhookNotifier;
@@ -111,9 +111,9 @@ class SyncChangedProducts
         $this->storeManager = $storeManager;
         $this->logger = $logger;
         $this->changeFilter = $changeFilter;
-        $this->categoryIndexState = $categoryIndexState;
+        $this->indexState = $indexState;
         $this->heldProducts = $heldProducts;
-        $this->heldWarningMinutes = $heldWarningMinutes;
+        $this->maxHoldMinutes = $maxHoldMinutes;
     }
 
     /**
@@ -168,16 +168,23 @@ class SyncChangedProducts
             return;
         }
 
-        $waiting = $this->waitingForCategoryIndex($pending);
+        $waiting = $this->waitingForIndexes($pending);
         $ready = [];
         $held = [];
         foreach ($pending as $storeId => [, $productIds]) {
-            $ready[$storeId] = array_values(array_filter($productIds, static function (int $id) use ($waiting): bool {
-                return !isset($waiting[$id]);
-            }));
-            $held[$storeId] = array_values(array_filter($productIds, static function (int $id) use ($waiting): bool {
-                return isset($waiting[$id]);
-            }));
+            $storeWaiting = $this->releaseOverdue($storeId, $waiting[$storeId] ?? []);
+            $ready[$storeId] = array_values(array_filter(
+                $productIds,
+                static function (int $id) use ($storeWaiting): bool {
+                    return !isset($storeWaiting[$id]);
+                }
+            ));
+            $held[$storeId] = array_values(array_filter(
+                $productIds,
+                static function (int $id) use ($storeWaiting): bool {
+                    return isset($storeWaiting[$id]);
+                }
+            ));
         }
 
         $toFilter = array_filter($ready);
@@ -207,7 +214,8 @@ class SyncChangedProducts
      *
      * @param int $storeId
      * @param int $currentVersion Current changelog max version
-     * @return array{0: SyncState, 1: int[]}|null Null when there is nothing to send
+     * @return array{0: SyncState, 1: int[], 2: int[]}|null [state, products to check, of them already held];
+     *         null when there is nothing to send
      */
     private function collectStore(int $storeId, int $currentVersion): ?array
     {
@@ -224,7 +232,7 @@ class SyncChangedProducts
                 'last_version' => $lastVersionId,
                 'current_version' => $currentVersion
             ]);
-            return empty($held) ? null : [$syncState, $held];
+            return empty($held) ? null : [$syncState, $held, $held];
         }
 
         // Get changed product IDs
@@ -244,7 +252,7 @@ class SyncChangedProducts
             'held_count' => count($held)
         ]);
 
-        return [$syncState, array_values(array_unique(array_merge($productIds, $held)))];
+        return [$syncState, array_values(array_unique(array_merge($productIds, $held))), $held];
     }
 
     /**
@@ -301,30 +309,88 @@ class SyncChangedProducts
     }
 
     /**
-     * @param array<int, array{0: SyncState, 1: int[]}> $pending
-     * @return array<int, true> Product ids whose category change Magento has not indexed yet
+     * @param array<int, array{0: SyncState, 1: int[], 2: int[]}> $pending
+     * @return array<int, array<int, true>> store id => product ids Magento has not indexed yet for that store
      */
-    private function waitingForCategoryIndex(array $pending): array
+    private function waitingForIndexes(array $pending): array
     {
         if (!$this->holding) {
             return [];
         }
 
-        $productIds = array_values(array_unique(array_merge([], ...array_map(static function (array $changes): array {
+        $all = array_values(array_unique(array_merge([], ...array_map(static function (array $changes): array {
             return $changes[1];
+        }, array_values($pending)))));
+        $held = array_values(array_unique(array_merge([], ...array_map(static function (array $changes): array {
+            return $changes[2];
         }, array_values($pending)))));
 
         try {
-            $waiting = $this->categoryIndexState->notIndexed($productIds);
+            $categories = array_fill_keys($this->indexState->notIndexed(IndexState::CATEGORIES, $all, $held), true);
+            $ruleWebsites = array_fill_keys($this->indexState->websitesWithPriceRules(), true);
+            $rules = empty($ruleWebsites)
+                ? []
+                : array_fill_keys($this->indexState->notIndexed(IndexState::PRICE_RULES, $all, $held), true);
+
+            $waiting = [];
+            foreach ($pending as $storeId => [, $productIds]) {
+                $withRules = isset($ruleWebsites[(int)$this->storeManager->getStore($storeId)->getWebsiteId()]);
+                foreach ($productIds as $productId) {
+                    if (isset($categories[$productId]) || ($withRules && isset($rules[$productId]))) {
+                        $waiting[$storeId][$productId] = true;
+                    }
+                }
+            }
+
+            return $waiting;
         } catch (\Throwable $e) {
             // Holding nothing is how the sync worked before, so a failed check never loses a change.
-            $this->logger->error('BradSearch Sync: Category index check failed, holding nothing', [
+            $this->logger->error('BradSearch Sync: Index check failed, holding nothing', [
                 'error' => $e->getMessage()
             ]);
             return [];
         }
+    }
 
-        return array_fill_keys($waiting, true);
+    /**
+     * Stop waiting for products held past the limit: a stuck index must not hold a change forever
+     *
+     * @param int $storeId
+     * @param array<int, true> $waiting
+     * @return array<int, true> The products to keep holding
+     */
+    private function releaseOverdue(int $storeId, array $waiting): array
+    {
+        if (empty($waiting)) {
+            return [];
+        }
+
+        try {
+            $overdue = array_values(array_filter(
+                $this->heldProducts->heldLongerThan($storeId, $this->maxHoldMinutes),
+                static function (int $id) use ($waiting): bool {
+                    return isset($waiting[$id]);
+                }
+            ));
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Held products age check failed', [
+                'store_id' => $storeId,
+                'error' => $e->getMessage()
+            ]);
+            return $waiting;
+        }
+        if (empty($overdue)) {
+            return $waiting;
+        }
+
+        $this->logger->warning('BradSearch Sync: Sending products Magento has not indexed after the hold limit', [
+            'store_id' => $storeId,
+            'product_count' => count($overdue),
+            'product_ids' => array_slice($overdue, 0, 20),
+            'minutes' => $this->maxHoldMinutes
+        ]);
+
+        return array_diff_key($waiting, array_flip($overdue));
     }
 
     /**
@@ -332,8 +398,8 @@ class SyncChangedProducts
      *
      * @param int $storeId
      * @param SyncState $syncState
-     * @param int[] $ready Changelog and held product ids whose categories are indexed
-     * @param int[] $waiting Product ids to hold until the category index catches up
+     * @param int[] $ready Changelog and held product ids Magento has indexed
+     * @param int[] $waiting Product ids to hold until Magento's index job catches up
      * @param array{changed: int[], hashes: array<int, string>}|null $filtered Null sends every ready product
      * @param int $currentVersion
      * @return void
@@ -395,21 +461,10 @@ class SyncChangedProducts
         }
         $this->updateSyncState($syncState, $currentVersion);
 
-        if (empty($waiting)) {
-            return;
-        }
-        $this->logger->info('BradSearch Sync: Holding products until the category index catches up', [
-            'store_id' => $storeId,
-            'product_count' => count($waiting)
-        ]);
-        $late = $this->heldProducts->heldLongerThan($storeId, $this->heldWarningMinutes);
-        if ($late['count'] > 0) {
-            $this->logger->warning('BradSearch Sync: Products waiting too long for the category index', [
+        if (!empty($waiting)) {
+            $this->logger->info('BradSearch Sync: Holding products until Magento indexes them', [
                 'store_id' => $storeId,
-                'product_count' => $late['count'],
-                'held_since' => $late['held_since'],
-                'product_ids' => $late['sample'],
-                'minutes' => $this->heldWarningMinutes
+                'product_count' => count($waiting)
             ]);
         }
     }

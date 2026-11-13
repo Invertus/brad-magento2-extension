@@ -10,10 +10,10 @@ use BradSearch\SearchGraphQl\Cron\SyncChangedProducts;
 use BradSearch\SearchGraphQl\Model\ResourceModel\SyncState as SyncStateResource;
 use BradSearch\SearchGraphQl\Model\SyncState;
 use BradSearch\SearchGraphQl\Model\SyncStateFactory;
-use BradSearch\SearchGraphQl\Model\Sync\CategoryIndexState;
 use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
+use BradSearch\SearchGraphQl\Model\Sync\IndexState;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
@@ -37,8 +37,8 @@ class SyncChangedProductsTest extends TestCase
     /** @var ChangeFilter&MockObject */
     private $changeFilter;
 
-    /** @var CategoryIndexState&MockObject */
-    private $categoryIndexState;
+    /** @var IndexState&MockObject */
+    private $indexState;
 
     /** @var HeldProducts&MockObject */
     private $heldProducts;
@@ -46,8 +46,29 @@ class SyncChangedProductsTest extends TestCase
     /** @var array<int, int> store id => saved cursor */
     private array $savedVersions = [];
 
+    /** @var int The cursor every store starts the run with */
+    private int $lastVersion = 400;
+
     /** @var int[] What the changelog returns for versions 400..500 */
     private array $changelogIds = [10, 11, 12];
+
+    /** @var array<int, int[]> store id => products it already holds */
+    private array $held = [];
+
+    /** @var array<string, int[]> view id => products that view has not indexed */
+    private array $notIndexed = [];
+
+    /** @var array<int, array{0: string, 1: int[], 2: int[]}> notIndexed() calls */
+    private array $indexChecks = [];
+
+    /** @var int[] Websites with an active catalog price rule */
+    private array $ruleWebsites = [];
+
+    /** @var array<int, int> store id => website id (default 1) */
+    private array $websites = [];
+
+    /** @var array<int, int[]> store id => products held past the limit */
+    private array $overdue = [];
 
     /** @var array<int, array{0: int[], 1: int[]}> store id => [released, held] */
     private array $heldUpdates = [];
@@ -76,13 +97,18 @@ class SyncChangedProductsTest extends TestCase
 
         $this->changeFilter = $this->createMock(ChangeFilter::class);
 
-        $this->categoryIndexState = $this->createMock(CategoryIndexState::class);
-        $this->heldProducts = $this->createMock(HeldProducts::class);
-        $this->heldProducts->method('isAvailable')->willReturn(true);
-        $this->heldProducts->method('heldLongerThan')->willReturn(['count' => 0, 'held_since' => null, 'sample' => []]);
-        $this->heldProducts->method('update')->willReturnCallback(function (int $storeId, array $release, array $hold): void {
-            $this->heldUpdates[$storeId] = [$release, $hold];
+        $this->indexState = $this->createMock(IndexState::class);
+        $this->indexState->method('notIndexed')->willReturnCallback(
+            function (string $viewId, array $productIds, array $held = []): array {
+                $this->indexChecks[] = [$viewId, $productIds, $held];
+                return $this->notIndexed[$viewId] ?? [];
+            }
+        );
+        $this->indexState->method('websitesWithPriceRules')->willReturnCallback(function (): array {
+            return $this->ruleWebsites;
         });
+
+        $this->heldProducts = $this->heldProductsMock(true);
     }
 
     public function testSendsOnlyChangedProductsAndStoresTheirHashesAfterTheNotificationSucceeded(): void
@@ -156,7 +182,7 @@ class SyncChangedProductsTest extends TestCase
 
     public function testAProductWaitingForTheCategoryIndexIsHeldAndTheOthersAreSent(): void
     {
-        $this->categoryIndexState->method('notIndexed')->with([10, 11, 12])->willReturn([11]);
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]])
             ->willReturn([1 => ['changed' => [10, 12], 'hashes' => [10 => 'a', 12 => 'c']]]);
         $this->notifier->expects($this->once())->method('notify')->with([10, 12], 1, self::CURRENT_VERSION, true)
@@ -171,8 +197,7 @@ class SyncChangedProductsTest extends TestCase
 
     public function testAHeldProductIsSentOnceItsCategoriesAreIndexed(): void
     {
-        $this->heldProducts->method('forStore')->with(1)->willReturn([20]);
-        $this->categoryIndexState->method('notIndexed')->with([10, 11, 12, 20])->willReturn([]);
+        $this->held[1] = [20];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12, 20]])
             ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
         $this->notifier->expects($this->once())->method('notify')->with([20], 1, self::CURRENT_VERSION, true)
@@ -182,13 +207,28 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => [[10, 11, 12, 20], []]], $this->heldUpdates);
+        $this->assertSame([[IndexState::CATEGORIES, [10, 11, 12, 20], [20]]], $this->indexChecks);
     }
 
-    public function testHeldProductsAreCheckedAgainWhenTheChangelogHasNothingNew(): void
+    public function testAHeldProductIsSentWhenNothingNewIsInTheChangelog(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [20];
+        $this->changelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([20])->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[20], []]], $this->heldUpdates);
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testHeldProductsAreCheckedAgainWhenTheChangelogRangeHasNoProducts(): void
     {
         $this->changelogIds = [];
-        $this->heldProducts->method('forStore')->willReturn([20]);
-        $this->categoryIndexState->method('notIndexed')->willReturn([]);
+        $this->held[1] = [20];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
             ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
         $this->notifier->expects($this->once())->method('notify')->with([20])->willReturn(true);
@@ -201,7 +241,7 @@ class SyncChangedProductsTest extends TestCase
 
     public function testOnlyWaitingProductsSendsNothingAndStillMovesTheCursor(): void
     {
-        $this->categoryIndexState->method('notIndexed')->willReturn([10, 11, 12]);
+        $this->notIndexed[IndexState::CATEGORIES] = [10, 11, 12];
         $this->changeFilter->expects($this->never())->method('filter');
         $this->notifier->expects($this->never())->method('notify');
 
@@ -213,7 +253,7 @@ class SyncChangedProductsTest extends TestCase
 
     public function testAFailedNotificationLeavesTheHeldProductsAsTheyWere(): void
     {
-        $this->categoryIndexState->method('notIndexed')->willReturn([11]);
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
         $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [10], 'hashes' => [10 => 'a']]]);
         $this->notifier->method('notify')->willReturn(false);
         $this->heldProducts->expects($this->never())->method('update');
@@ -223,9 +263,11 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([], $this->savedVersions);
     }
 
-    public function testABrokenCategoryIndexCheckHoldsNothing(): void
+    public function testABrokenIndexCheckHoldsNothing(): void
     {
-        $this->categoryIndexState->method('notIndexed')->willThrowException(new \RuntimeException('no mview_state'));
+        $indexState = $this->createMock(IndexState::class);
+        $indexState->method('notIndexed')->willThrowException(new \RuntimeException('no mview_state'));
+        $this->indexState = $indexState;
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
             ->willReturn([1 => ['changed' => [10, 11, 12], 'hashes' => [10 => 'a', 11 => 'b', 12 => 'c']]]);
         $this->notifier->expects($this->once())->method('notify')->with([10, 11, 12])->willReturn(true);
@@ -237,42 +279,80 @@ class SyncChangedProductsTest extends TestCase
 
     public function testWithoutTheHeldTableNothingIsHeldAndEverythingReadyIsSent(): void
     {
-        $heldProducts = $this->createMock(HeldProducts::class);
-        $heldProducts->method('isAvailable')->willReturn(false);
-        $heldProducts->expects($this->never())->method('forStore');
-        $heldProducts->expects($this->never())->method('update');
-        $this->heldProducts = $heldProducts;
-        $this->categoryIndexState->expects($this->never())->method('notIndexed');
+        $this->heldProducts = $this->heldProductsMock(false);
+        $this->heldProducts->expects($this->never())->method('forStore');
+        $this->heldProducts->expects($this->never())->method('update');
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
             ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
         $this->notifier->expects($this->once())->method('notify')->with([11])->willReturn(true);
 
         $this->cron([1])->execute();
 
+        $this->assertSame([], $this->indexChecks);
         $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
     }
 
-    public function testAProductHeldTooLongLogsAWarningAndStaysHeld(): void
+    public function testAProductHeldPastTheLimitIsSentWithAWarning(): void
     {
-        $this->categoryIndexState->method('notIndexed')->willReturn([11]);
-        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
-        $heldProducts = $this->createMock(HeldProducts::class);
-        $heldProducts->method('isAvailable')->willReturn(true);
-        $heldProducts->method('update')->willReturnCallback(function (int $storeId, array $release, array $hold): void {
-            $this->heldUpdates[$storeId] = [$release, $hold];
-        });
-        $heldProducts->expects($this->once())->method('heldLongerThan')->with(1, 15)
-            ->willReturn(['count' => 1, 'held_since' => '2026-11-13 09:00:00', 'sample' => [11]]);
-        $this->heldProducts = $heldProducts;
+        $this->held[1] = [11];
+        $this->notIndexed[IndexState::CATEGORIES] = [11, 12];
+        $this->overdue[1] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11]])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([11])->willReturn(true);
 
         $this->cron([1])->execute();
 
-        $this->assertSame([1 => [[10, 12], [11]]], $this->heldUpdates);
+        $this->assertSame([1 => [[10, 11], [12]]], $this->heldUpdates);
         $warnings = array_values(array_filter($this->logs, static function (array $log): bool {
             return $log[0] === 'warning';
         }));
         $this->assertCount(1, $warnings);
         $this->assertSame([11], $warnings[0][2]['product_ids']);
+    }
+
+    public function testThePriceRuleIndexIsOnlyWaitedForOnWebsitesWithActiveRules(): void
+    {
+        $this->websites = [1 => 1, 9 => 9];
+        $this->ruleWebsites = [9];
+        $this->notIndexed[IndexState::PRICE_RULES] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12], 9 => [10, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []], 9 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1, 9])->execute();
+
+        $this->assertSame([1 => [[10, 11, 12], []], 9 => [[10, 12], [11]]], $this->heldUpdates);
+    }
+
+    public function testWithoutActivePriceRulesTheRuleIndexIsNotRead(): void
+    {
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([IndexState::CATEGORIES], array_column($this->indexChecks, 0));
+    }
+
+    /**
+     * @param bool $available
+     * @return HeldProducts&MockObject
+     */
+    private function heldProductsMock(bool $available)
+    {
+        $heldProducts = $this->createMock(HeldProducts::class);
+        $heldProducts->method('isAvailable')->willReturn($available);
+        $heldProducts->method('forStore')->willReturnCallback(function (int $storeId): array {
+            return $this->held[$storeId] ?? [];
+        });
+        $heldProducts->method('heldLongerThan')->willReturnCallback(function (int $storeId, int $minutes): array {
+            $this->assertSame(15, $minutes);
+            return $this->overdue[$storeId] ?? [];
+        });
+        $heldProducts->method('update')->willReturnCallback(function (int $storeId, array $release, array $hold): void {
+            $this->heldUpdates[$storeId] = [$release, $hold];
+        });
+
+        return $heldProducts;
     }
 
     /**
@@ -285,10 +365,14 @@ class SyncChangedProductsTest extends TestCase
         foreach ($storeIds as $storeId) {
             $store = $this->createMock(Store::class);
             $store->method('getId')->willReturn($storeId);
-            $stores[] = $store;
+            $store->method('getWebsiteId')->willReturn($this->websites[$storeId] ?? 1);
+            $stores[$storeId] = $store;
         }
         $storeManager = $this->createMock(StoreManagerInterface::class);
-        $storeManager->method('getStores')->willReturn($stores);
+        $storeManager->method('getStores')->willReturn(array_values($stores));
+        $storeManager->method('getStore')->willReturnCallback(function (int $storeId) use ($stores): Store {
+            return $stores[$storeId];
+        });
 
         $factory = $this->createMock(SyncStateFactory::class);
         $factory->method('create')->willReturnCallback(function (): SyncState {
@@ -297,7 +381,7 @@ class SyncChangedProductsTest extends TestCase
                 ->onlyMethods(['getId'])
                 ->getMock();
             $state->method('getId')->willReturn(1);
-            $state->setLastVersionId(400);
+            $state->setLastVersionId($this->lastVersion);
             return $state;
         });
         $this->syncStateResource->method('loadByStoreId')->willReturnCallback(
@@ -315,7 +399,7 @@ class SyncChangedProductsTest extends TestCase
             $storeManager,
             $this->logger(),
             $this->changeFilter,
-            $this->categoryIndexState,
+            $this->indexState,
             $this->heldProducts
         );
     }
