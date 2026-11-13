@@ -26,5 +26,15 @@
         "constraint": {
             "PRIMARY": true
         }
+    },
+    "bradsearch_held_product": {
+        "column": {
+            "store_id": true,
+            "product_id": true,
+            "held_since": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
     }
 }

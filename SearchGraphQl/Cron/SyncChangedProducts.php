@@ -9,8 +9,10 @@ namespace BradSearch\SearchGraphQl\Cron;
 use BradSearch\SearchGraphQl\Model\ResourceModel\SyncState as SyncStateResource;
 use BradSearch\SearchGraphQl\Model\SyncState;
 use BradSearch\SearchGraphQl\Model\SyncStateFactory;
+use BradSearch\SearchGraphQl\Model\Sync\CategoryIndexState;
 use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
+use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -59,6 +61,26 @@ class SyncChangedProducts
     private ChangeFilter $changeFilter;
 
     /**
+     * @var CategoryIndexState
+     */
+    private CategoryIndexState $categoryIndexState;
+
+    /**
+     * @var HeldProducts
+     */
+    private HeldProducts $heldProducts;
+
+    /**
+     * @var int
+     */
+    private int $heldWarningMinutes;
+
+    /**
+     * @var bool
+     */
+    private bool $holding = false;
+
+    /**
      * @param ChangelogReader $changelogReader
      * @param WebhookNotifier $webhookNotifier
      * @param SyncStateFactory $syncStateFactory
@@ -66,6 +88,9 @@ class SyncChangedProducts
      * @param StoreManagerInterface $storeManager
      * @param LoggerInterface $logger
      * @param ChangeFilter $changeFilter
+     * @param CategoryIndexState $categoryIndexState
+     * @param HeldProducts $heldProducts
+     * @param int $heldWarningMinutes A product held longer than this logs a warning on every run
      */
     public function __construct(
         ChangelogReader $changelogReader,
@@ -74,7 +99,10 @@ class SyncChangedProducts
         SyncStateResource $syncStateResource,
         StoreManagerInterface $storeManager,
         LoggerInterface $logger,
-        ChangeFilter $changeFilter
+        ChangeFilter $changeFilter,
+        CategoryIndexState $categoryIndexState,
+        HeldProducts $heldProducts,
+        int $heldWarningMinutes = 15
     ) {
         $this->changelogReader = $changelogReader;
         $this->webhookNotifier = $webhookNotifier;
@@ -83,6 +111,9 @@ class SyncChangedProducts
         $this->storeManager = $storeManager;
         $this->logger = $logger;
         $this->changeFilter = $changeFilter;
+        $this->categoryIndexState = $categoryIndexState;
+        $this->heldProducts = $heldProducts;
+        $this->heldWarningMinutes = $heldWarningMinutes;
     }
 
     /**
@@ -107,6 +138,8 @@ class SyncChangedProducts
             $this->logger->debug('BradSearch Sync: No changelog entries found');
             return;
         }
+
+        $this->holding = $this->holdingAvailable();
 
         // Process each store that has sync enabled
         $pending = [];
@@ -135,11 +168,31 @@ class SyncChangedProducts
             return;
         }
 
-        $filtered = $this->filterChanges($pending);
+        $waiting = $this->waitingForCategoryIndex($pending);
+        $ready = [];
+        $held = [];
+        foreach ($pending as $storeId => [, $productIds]) {
+            $ready[$storeId] = array_values(array_filter($productIds, static function (int $id) use ($waiting): bool {
+                return !isset($waiting[$id]);
+            }));
+            $held[$storeId] = array_values(array_filter($productIds, static function (int $id) use ($waiting): bool {
+                return isset($waiting[$id]);
+            }));
+        }
 
-        foreach ($pending as $storeId => [$syncState, $productIds]) {
+        $toFilter = array_filter($ready);
+        $filtered = empty($toFilter) ? [] : $this->filterChanges($toFilter);
+
+        foreach ($pending as $storeId => [$syncState]) {
             try {
-                $this->sendStore($storeId, $syncState, $productIds, $filtered[$storeId] ?? null, $currentVersion);
+                $this->sendStore(
+                    $storeId,
+                    $syncState,
+                    $ready[$storeId],
+                    $held[$storeId],
+                    $filtered === null ? null : ($filtered[$storeId] ?? ['changed' => [], 'hashes' => []]),
+                    $currentVersion
+                );
             } catch (\Exception $e) {
                 $this->logger->error('BradSearch Sync: Error processing store', [
                     'store_id' => $storeId,
@@ -150,7 +203,7 @@ class SyncChangedProducts
     }
 
     /**
-     * Read the changelog product ids a store has not sent yet
+     * Read the changelog product ids a store has not sent yet, plus the products it still holds
      *
      * @param int $storeId
      * @param int $currentVersion Current changelog max version
@@ -162,6 +215,8 @@ class SyncChangedProducts
         $syncState = $this->getOrCreateSyncState($storeId, $currentVersion);
         $lastVersionId = $syncState->getLastVersionId();
 
+        $held = $this->holding ? $this->heldProducts->forStore($storeId) : [];
+
         // Check if there are new changes
         if ($currentVersion <= $lastVersionId) {
             $this->logger->debug('BradSearch Sync: No new changes', [
@@ -169,13 +224,13 @@ class SyncChangedProducts
                 'last_version' => $lastVersionId,
                 'current_version' => $currentVersion
             ]);
-            return null;
+            return empty($held) ? null : [$syncState, $held];
         }
 
         // Get changed product IDs
         $productIds = $this->changelogReader->getChangedProductIds($lastVersionId, $currentVersion);
 
-        if (empty($productIds)) {
+        if (empty($productIds) && empty($held)) {
             // No products in range, but still update version to avoid reprocessing
             $this->updateSyncState($syncState, $currentVersion);
             return null;
@@ -185,25 +240,24 @@ class SyncChangedProducts
             'store_id' => $storeId,
             'from_version' => $lastVersionId,
             'to_version' => $currentVersion,
-            'product_count' => count($productIds)
+            'product_count' => count($productIds),
+            'held_count' => count($held)
         ]);
 
-        return [$syncState, $productIds];
+        return [$syncState, array_values(array_unique(array_merge($productIds, $held)))];
     }
 
     /**
      * Keep only the products whose indexed data changed, for all stores in one pass
      *
-     * @param array<int, array{0: SyncState, 1: int[]}> $pending
+     * @param array<int, int[]> $productIdsByStore
      * @return array<int, array{changed: int[], hashes: array<int, string>}>|null Null sends everything
      */
-    private function filterChanges(array $pending): ?array
+    private function filterChanges(array $productIdsByStore): ?array
     {
         $start = microtime(true);
         try {
-            $filtered = $this->changeFilter->filter(array_map(static function (array $changes): array {
-                return $changes[1];
-            }, $pending));
+            $filtered = $this->changeFilter->filter($productIdsByStore);
         } catch (\Throwable $e) {
             // Sending every changelog product is how the sync worked before the filter, so a broken
             // filter costs extra work in BradSearch, never a lost change.
@@ -215,7 +269,7 @@ class SyncChangedProducts
 
         $counts = [];
         foreach ($filtered as $storeId => $result) {
-            $counts[$storeId] = count($result['changed']) . '/' . count($pending[$storeId][1]);
+            $counts[$storeId] = count($result['changed']) . '/' . count($productIdsByStore[$storeId]);
         }
         $this->logger->info('BradSearch Sync: Change filter', [
             'changed_per_store' => $counts,
@@ -226,28 +280,76 @@ class SyncChangedProducts
     }
 
     /**
+     * Holding needs its table; without it the sync sends as it did before, rather than stopping
+     *
+     * @return bool
+     */
+    private function holdingAvailable(): bool
+    {
+        try {
+            if ($this->heldProducts->isAvailable()) {
+                return true;
+            }
+            $this->logger->error('BradSearch Sync: Held products table missing, holding nothing (run setup:upgrade)');
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Held products table check failed, holding nothing', [
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<int, array{0: SyncState, 1: int[]}> $pending
+     * @return array<int, true> Product ids whose category change Magento has not indexed yet
+     */
+    private function waitingForCategoryIndex(array $pending): array
+    {
+        if (!$this->holding) {
+            return [];
+        }
+
+        $productIds = array_values(array_unique(array_merge([], ...array_map(static function (array $changes): array {
+            return $changes[1];
+        }, array_values($pending)))));
+
+        try {
+            $waiting = $this->categoryIndexState->notIndexed($productIds);
+        } catch (\Throwable $e) {
+            // Holding nothing is how the sync worked before, so a failed check never loses a change.
+            $this->logger->error('BradSearch Sync: Category index check failed, holding nothing', [
+                'error' => $e->getMessage()
+            ]);
+            return [];
+        }
+
+        return array_fill_keys($waiting, true);
+    }
+
+    /**
      * Notify BradSearch about one store's changed products and move its cursor on success
      *
      * @param int $storeId
      * @param SyncState $syncState
-     * @param int[] $productIds Changelog product ids
-     * @param array{changed: int[], hashes: array<int, string>}|null $filtered Null sends every changelog product
+     * @param int[] $ready Changelog and held product ids whose categories are indexed
+     * @param int[] $waiting Product ids to hold until the category index catches up
+     * @param array{changed: int[], hashes: array<int, string>}|null $filtered Null sends every ready product
      * @param int $currentVersion
      * @return void
      */
     private function sendStore(
         int $storeId,
         SyncState $syncState,
-        array $productIds,
+        array $ready,
+        array $waiting,
         ?array $filtered,
         int $currentVersion
     ): void {
-        if ($filtered !== null) {
-            $productIds = $filtered['changed'];
-        }
+        $productIds = $filtered === null ? $ready : $filtered['changed'];
 
         if (empty($productIds)) {
-            $this->updateSyncState($syncState, $currentVersion);
+            $this->moveOn($syncState, $ready, $waiting, $currentVersion);
             return;
         }
 
@@ -260,7 +362,7 @@ class SyncChangedProducts
                 $this->changeFilter->store($filtered['hashes'], $storeId);
             }
             // Update sync state only on successful notification
-            $this->updateSyncState($syncState, $currentVersion);
+            $this->moveOn($syncState, $ready, $waiting, $currentVersion);
             $this->logger->info('BradSearch Sync: Successfully notified', [
                 'store_id' => $storeId,
                 'product_count' => count($productIds),
@@ -271,6 +373,43 @@ class SyncChangedProducts
             $this->logger->warning('BradSearch Sync: Notification failed, will retry', [
                 'store_id' => $storeId,
                 'product_count' => count($productIds)
+            ]);
+        }
+    }
+
+    /**
+     * Release the ready products, hold the waiting ones, then move the store's cursor past both
+     *
+     * @param SyncState $syncState
+     * @param int[] $ready
+     * @param int[] $waiting
+     * @param int $currentVersion
+     * @return void
+     */
+    private function moveOn(SyncState $syncState, array $ready, array $waiting, int $currentVersion): void
+    {
+        $storeId = (int)$syncState->getStoreId();
+        // Written before the cursor moves: a cursor past a product that was never held would lose it.
+        if ($this->holding) {
+            $this->heldProducts->update($storeId, $ready, $waiting);
+        }
+        $this->updateSyncState($syncState, $currentVersion);
+
+        if (empty($waiting)) {
+            return;
+        }
+        $this->logger->info('BradSearch Sync: Holding products until the category index catches up', [
+            'store_id' => $storeId,
+            'product_count' => count($waiting)
+        ]);
+        $late = $this->heldProducts->heldLongerThan($storeId, $this->heldWarningMinutes);
+        if ($late['count'] > 0) {
+            $this->logger->warning('BradSearch Sync: Products waiting too long for the category index', [
+                'store_id' => $storeId,
+                'product_count' => $late['count'],
+                'held_since' => $late['held_since'],
+                'product_ids' => $late['sample'],
+                'minutes' => $this->heldWarningMinutes
             ]);
         }
     }

@@ -61,8 +61,8 @@ Deployment: `./deploy-bradsearch.sh` (use `--dry-run` first, `--compile` for DI 
 - Modules have no inter-dependencies; each can be deployed independently
 - PHP compatibility: 7.4, 8.1, or 8.2
 - Test files and `Test/` directories are excluded from deployment automatically
-- The `bradsearch_sync_state` and `bradsearch_product_state` tables (SearchGraphQl) and the `bradsearch_order_outbox` table (Analytics) are created via `db_schema.xml`
+- The `bradsearch_sync_state`, `bradsearch_product_state` and `bradsearch_held_product` tables (SearchGraphQl) and the `bradsearch_order_outbox` table (Analytics) are created via `db_schema.xml`
 - A new attribute that the sync always reads (`BradProducts::COLLECTION_ATTRIBUTES`, `ProductDataLoader::WHITELIST_ATTRIBUTES`) must also go into `ChangeFilter`'s `attributeCodes` in `SearchGraphQl/etc/di.xml`; `ChangeFilterConfigTest` fails otherwise
 - After installing the release that adds `bradsearch_product_state`, the first wave sends every changelog product once, because no hashes are stored yet
 - A filtered push carries `X-BradSearch-Changes-Only: 1`; the backend then does not drop the same ids a minute later as a duplicate. An unfiltered push (filter failed) sends `0`
-- `bradProducts` reads categories from the scheduled category index (`catalog_category_product_index_store*`), so the hash includes both the assignment and that index: a category change is sent at once, and again with its next changelog entry once that index has caught up
+- `bradProducts` reads categories from the scheduled category index (`catalog_category_product_index_store*`), which Magento's index cron job updates after the sync job has run. So the sync holds a product while `catalog_product_category_cl` has rows for it past that view's `mview_state.version_id` (`CategoryIndexState`), keeps it in `bradsearch_held_product` and sends it once the index has caught up. A product held over 15 minutes logs a warning on every run. If the check fails, nothing is held
