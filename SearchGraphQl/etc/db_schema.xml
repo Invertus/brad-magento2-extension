@@ -23,4 +23,23 @@
             <column name="last_version_id"/>
         </index>
     </table>
+    <table name="bradsearch_product_state" resource="default" engine="innodb" comment="BradSearch Product State">
+        <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="varchar" name="hash" length="64" nullable="false" comment="Hash of the indexed data last sent"/>
+        <column xsi:type="timestamp" name="updated_at" on_update="true" nullable="false" default="CURRENT_TIMESTAMP" comment="Updated At"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="store_id"/>
+            <column name="product_id"/>
+        </constraint>
+    </table>
+    <table name="bradsearch_resend_product" resource="default" engine="innodb" comment="BradSearch Products To Send Again">
+        <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="varchar" name="token" length="32" nullable="false" comment="Token of this mark"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="store_id"/>
+            <column name="product_id"/>
+        </constraint>
+    </table>
 </schema>

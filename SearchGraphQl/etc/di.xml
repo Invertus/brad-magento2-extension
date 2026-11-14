@@ -61,9 +61,48 @@
         </arguments>
     </type>
 
+    <type name="BradSearch\SearchGraphQl\Model\Sync\FetchRecorder">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
     <type name="BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier">
         <arguments>
             <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
+    <!--
+        Attributes the sync reads whatever their searchable/filterable flags: BradProducts
+        COLLECTION_ATTRIBUTES, ProductFeatures ProductDataLoader WHITELIST_ATTRIBUTES, status and
+        visibility. A price calculator that reads other attributes adds an attributeProviders item.
+    -->
+    <type name="BradSearch\SearchGraphQl\Model\Sync\ChangeFilter">
+        <arguments>
+            <argument name="attributeCodes" xsi:type="array">
+                <item name="name" xsi:type="string">name</item>
+                <item name="sku" xsi:type="string">sku</item>
+                <item name="url_key" xsi:type="string">url_key</item>
+                <item name="image" xsi:type="string">image</item>
+                <item name="short_description" xsi:type="string">short_description</item>
+                <item name="description" xsi:type="string">description</item>
+                <item name="price" xsi:type="string">price</item>
+                <item name="price_type" xsi:type="string">price_type</item>
+                <item name="special_price" xsi:type="string">special_price</item>
+                <item name="special_from_date" xsi:type="string">special_from_date</item>
+                <item name="special_to_date" xsi:type="string">special_to_date</item>
+                <item name="tax_class_id" xsi:type="string">tax_class_id</item>
+                <item name="mm_popularity" xsi:type="string">mm_popularity</item>
+                <item name="manufacturer" xsi:type="string">manufacturer</item>
+                <item name="mpn" xsi:type="string">mpn</item>
+                <item name="barcode" xsi:type="string">barcode</item>
+                <item name="middle_of_product_name" xsi:type="string">middle_of_product_name</item>
+                <item name="beginning_of_product_nam" xsi:type="string">beginning_of_product_nam</item>
+                <item name="amazon_asin" xsi:type="string">amazon_asin</item>
+                <item name="status" xsi:type="string">status</item>
+                <item name="visibility" xsi:type="string">visibility</item>
+            </argument>
         </arguments>
     </type>
 
