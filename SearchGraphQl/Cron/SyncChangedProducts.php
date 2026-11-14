@@ -381,11 +381,14 @@ class SyncChangedProducts
 
             return $waiting;
         } catch (\Throwable $e) {
-            // Holding nothing is how the sync worked before, so a failed check never loses a change.
-            $this->logger->error('BradSearch Sync: Index check failed, holding nothing', [
+            // Holding nothing new is how the sync worked before, so a failed check never loses a change.
+            // Products already held stay held: one sent at the limit must still be checked once indexed.
+            $this->logger->error('BradSearch Sync: Index check failed, holding nothing new', [
                 'error' => $e->getMessage()
             ]);
-            return [];
+            return array_map(static function (array $changes): array {
+                return array_fill_keys(array_keys($changes[3]), true);
+            }, $pending);
         }
     }
 

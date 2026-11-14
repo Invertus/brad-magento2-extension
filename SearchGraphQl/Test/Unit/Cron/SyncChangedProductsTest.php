@@ -373,7 +373,7 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([], $this->savedVersions);
     }
 
-    public function testABrokenIndexCheckHoldsNothing(): void
+    public function testABrokenIndexCheckHoldsNothingNew(): void
     {
         $indexState = $this->createMock(IndexState::class);
         $indexState->method('notIndexed')->willThrowException(new \RuntimeException('no mview_state'));
@@ -385,6 +385,21 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => [[10, 11, 12], []]], $this->heldUpdates);
+    }
+
+    public function testABrokenIndexCheckKeepsTheProductsAlreadyHeld(): void
+    {
+        $this->held[1] = [20 => true, 21 => false];
+        $indexState = $this->createMock(IndexState::class);
+        $indexState->method('notIndexed')->willThrowException(new \RuntimeException('db gone'));
+        $this->indexState = $indexState;
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [10], 'hashes' => [10 => 'a']]]);
+        $this->notifier->method('notify')->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[10, 11, 12], [20, 21]]], $this->heldUpdates);
     }
 
     public function testWithoutTheHeldTableNothingIsHeldAndEverythingReadyIsSent(): void
