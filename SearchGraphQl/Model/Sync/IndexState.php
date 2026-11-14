@@ -39,10 +39,9 @@ class IndexState
     /**
      * @param string $viewId One of the view constants
      * @param int[] $productIds
-     * @param int[] $held Products already held; a full reindex keeps them held even if their rows are cleaned
-     * @return int[] The products whose change is still waiting for the index job
+     * @return int[] The products whose change may still be waiting for the index job
      */
-    public function notIndexed(string $viewId, array $productIds, array $held = []): array
+    public function notIndexed(string $viewId, array $productIds): array
     {
         if (empty($productIds)) {
             return [];
@@ -61,19 +60,22 @@ class IndexState
         }
 
         $productIds = array_values(array_unique(array_map('intval', $productIds)));
-        // A full reindex moves the version to the end when it starts, but its new tables go live only
-        // when it ends. Until then every product with a change in the log may still read old data.
-        $suspended = $state['status'] === 'suspended';
-        $waiting = $suspended ? [array_values(array_intersect($productIds, array_map('intval', $held)))] : [];
+        // A full reindex moves the version to the end when it starts, and its new tables go live only when
+        // it ends. The hourly changelog cleanup may delete the rows of changes made before it started, so
+        // the log cannot tell which products read old data until then: every product waits.
+        if ($state['status'] === 'suspended') {
+            return $productIds;
+        }
+
+        $waiting = [];
         foreach (array_chunk($productIds, self::BATCH_SIZE) as $batch) {
-            $select = $connection->select()
-                ->distinct(true)
-                ->from($changelog, ['entity_id'])
-                ->where('entity_id IN (?)', $batch);
-            if (!$suspended) {
-                $select->where('version_id > ?', (int)$state['version_id']);
-            }
-            $waiting[] = $connection->fetchCol($select);
+            $waiting[] = $connection->fetchCol(
+                $connection->select()
+                    ->distinct(true)
+                    ->from($changelog, ['entity_id'])
+                    ->where('entity_id IN (?)', $batch)
+                    ->where('version_id > ?', (int)$state['version_id'])
+            );
         }
 
         return array_values(array_unique(array_map('intval', array_merge([], ...$waiting))));

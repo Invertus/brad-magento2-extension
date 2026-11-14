@@ -33,10 +33,20 @@
             <column name="product_id"/>
         </constraint>
     </table>
-    <table name="bradsearch_held_product" resource="default" engine="innodb" comment="BradSearch products waiting for the category index">
+    <table name="bradsearch_held_product" resource="default" engine="innodb" comment="BradSearch products waiting for Magento indexes">
         <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
         <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
         <column xsi:type="timestamp" name="held_since" on_update="false" nullable="false" default="CURRENT_TIMESTAMP" comment="First held at"/>
+        <column xsi:type="smallint" name="sent_at_limit" unsigned="true" nullable="false" default="0" comment="Sent at the hold limit already"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="store_id"/>
+            <column name="product_id"/>
+        </constraint>
+    </table>
+    <table name="bradsearch_resend_product" resource="default" engine="innodb" comment="BradSearch Products To Send Again">
+        <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="varchar" name="token" length="32" nullable="false" comment="Token of this mark"/>
         <constraint xsi:type="primary" referenceId="PRIMARY">
             <column name="store_id"/>
             <column name="product_id"/>

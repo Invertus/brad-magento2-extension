@@ -9,8 +9,9 @@ namespace BradSearch\SearchGraphQl\Model\Sync;
 use Magento\Framework\App\ResourceConnection;
 
 /**
- * Products a store has read from the changelog but not sent yet, because Magento has not indexed
- * their change. The store's changelog cursor moves past them, so they are kept here until sent.
+ * Products a store has read from the changelog but Magento has not indexed yet. The store's changelog
+ * cursor moves past them, so they are kept here until Magento has indexed them, also after they were sent
+ * at the hold limit.
  */
 class HeldProducts
 {
@@ -43,29 +44,34 @@ class HeldProducts
 
     /**
      * @param int $storeId
-     * @return int[]
+     * @return array<int, bool> product id => already sent at the hold limit
      */
     public function forStore(int $storeId): array
     {
         $connection = $this->resource->getConnection();
-
-        return array_map('intval', $connection->fetchCol(
+        $held = [];
+        foreach ($connection->fetchPairs(
             $connection->select()
-                ->from($this->resource->getTableName(self::TABLE), ['product_id'])
+                ->from($this->resource->getTableName(self::TABLE), ['product_id', 'sent_at_limit'])
                 ->where('store_id = ?', $storeId)
-        ));
+        ) as $productId => $sentAtLimit) {
+            $held[(int)$productId] = (bool)$sentAtLimit;
+        }
+
+        return $held;
     }
 
     /**
-     * Release the products that were sent and hold the ones still waiting. A product held again keeps
-     * the time it was first held.
+     * Release the products Magento has indexed and hold the ones still waiting. A product held again keeps
+     * the time it was first held and whether it was sent at the limit.
      *
      * @param int $storeId
      * @param int[] $release
      * @param int[] $hold
+     * @param int[] $sentAtLimit Held products just sent at the hold limit
      * @return void
      */
-    public function update(int $storeId, array $release, array $hold): void
+    public function update(int $storeId, array $release, array $hold, array $sentAtLimit = []): void
     {
         $connection = $this->resource->getConnection();
         $table = $this->resource->getTableName(self::TABLE);
@@ -79,6 +85,13 @@ class HeldProducts
                 $rows[] = ['store_id' => $storeId, 'product_id' => (int)$productId];
             }
             $connection->insertOnDuplicate($table, $rows, ['store_id']);
+        }
+        foreach (array_chunk($sentAtLimit, self::BATCH_SIZE) as $batch) {
+            $connection->update(
+                $table,
+                ['sent_at_limit' => 1],
+                ['store_id = ?' => $storeId, 'product_id IN (?)' => $batch]
+            );
         }
     }
 

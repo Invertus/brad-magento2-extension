@@ -36,10 +36,29 @@ class HeldProductsTest extends TestCase
         $this->held()->update(1, [10, 12], [11]);
     }
 
+    public function testProductsSentAtTheLimitAreMarkedSo(): void
+    {
+        $this->connection->expects($this->once())->method('update')
+            ->with('bradsearch_held_product', ['sent_at_limit' => 1], ['store_id = ?' => 1, 'product_id IN (?)' => [11]]);
+
+        $this->held()->update(1, [], [11], [11]);
+    }
+
+    public function testForStoreSaysWhichWereSentAtTheLimit(): void
+    {
+        $select = $this->createMock(\Magento\Framework\DB\Select::class);
+        $select->method($this->anything())->willReturnSelf();
+        $this->connection->method('select')->willReturn($select);
+        $this->connection->method('fetchPairs')->willReturn(['11' => '0', '12' => '1']);
+
+        $this->assertSame([11 => false, 12 => true], $this->held()->forStore(1));
+    }
+
     public function testUpdateWithNothingToChangeWritesNothing(): void
     {
         $this->connection->expects($this->never())->method('delete');
         $this->connection->expects($this->never())->method('insertOnDuplicate');
+        $this->connection->expects($this->never())->method('update');
 
         $this->held()->update(1, [], []);
     }

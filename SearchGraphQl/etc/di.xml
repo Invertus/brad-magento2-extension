@@ -61,6 +61,12 @@
         </arguments>
     </type>
 
+    <type name="BradSearch\SearchGraphQl\Model\Sync\FetchRecorder">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+        </arguments>
+    </type>
+
     <type name="BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier">
         <arguments>
             <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>

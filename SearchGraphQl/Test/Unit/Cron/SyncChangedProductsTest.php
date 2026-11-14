@@ -14,6 +14,7 @@ use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\IndexState;
+use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
@@ -43,6 +44,12 @@ class SyncChangedProductsTest extends TestCase
     /** @var HeldProducts&MockObject */
     private $heldProducts;
 
+    /** @var ResendProducts&MockObject */
+    private $resendProducts;
+
+    /** @var array<int, array<int, string>> store id => marked product => token */
+    private array $marks = [];
+
     /** @var array<int, int> store id => saved cursor */
     private array $savedVersions = [];
 
@@ -52,13 +59,13 @@ class SyncChangedProductsTest extends TestCase
     /** @var int[] What the changelog returns for versions 400..500 */
     private array $changelogIds = [10, 11, 12];
 
-    /** @var array<int, int[]> store id => products it already holds */
+    /** @var array<int, array<int, bool>> store id => held product => sent at the limit already */
     private array $held = [];
 
     /** @var array<string, int[]> view id => products that view has not indexed */
     private array $notIndexed = [];
 
-    /** @var array<int, array{0: string, 1: int[], 2: int[]}> notIndexed() calls */
+    /** @var array<int, array{0: string, 1: int[]}> notIndexed() calls */
     private array $indexChecks = [];
 
     /** @var int[] Websites with an active catalog price rule */
@@ -72,6 +79,9 @@ class SyncChangedProductsTest extends TestCase
 
     /** @var array<int, array{0: int[], 1: int[]}> store id => [released, held] */
     private array $heldUpdates = [];
+
+    /** @var array<int, int[]> store id => products marked as sent at the hold limit */
+    private array $sentAtLimit = [];
 
     /** @var array<int, array{0: string, 1: string, 2: array}> */
     private array $logs = [];
@@ -99,8 +109,8 @@ class SyncChangedProductsTest extends TestCase
 
         $this->indexState = $this->createMock(IndexState::class);
         $this->indexState->method('notIndexed')->willReturnCallback(
-            function (string $viewId, array $productIds, array $held = []): array {
-                $this->indexChecks[] = [$viewId, $productIds, $held];
+            function (string $viewId, array $productIds): array {
+                $this->indexChecks[] = [$viewId, $productIds];
                 return $this->notIndexed[$viewId] ?? [];
             }
         );
@@ -109,6 +119,12 @@ class SyncChangedProductsTest extends TestCase
         });
 
         $this->heldProducts = $this->heldProductsMock(true);
+
+        $this->resendProducts = $this->createMock(ResendProducts::class);
+        $this->resendProducts->method('isAvailable')->willReturn(true);
+        $this->resendProducts->method('forStore')->willReturnCallback(function (int $storeId): array {
+            return $this->marks[$storeId] ?? [];
+        });
     }
 
     public function testSendsOnlyChangedProductsAndStoresTheirHashesAfterTheNotificationSucceeded(): void
@@ -145,12 +161,106 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
     }
 
-    public function testABrokenFilterSendsEveryChangelogProductAndStoresNoHash(): void
+    public function testABrokenFilterSendsEveryProductAndForgetsTheirHashes(): void
     {
         $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('table missing'));
         $this->notifier->expects($this->once())->method('notify')->with([10, 11, 12], 1, self::CURRENT_VERSION, false)
             ->willReturn(true);
         $this->changeFilter->expects($this->never())->method('store');
+        // BradSearch now holds what it fetches, so a later change back to the stored state must still be sent.
+        $this->changeFilter->expects($this->once())->method('forget')->with([10, 11, 12], 1);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testABrokenFilterWithAFailedNotificationForgetsNothing(): void
+    {
+        $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('db gone'));
+        $this->notifier->method('notify')->willReturn(false);
+        $this->changeFilter->expects($this->never())->method('forget');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testAFailedForgetKeepsTheCursorSoTheProductsAreSentAgain(): void
+    {
+        $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('filter broke'));
+        $this->notifier->method('notify')->willReturn(true);
+        $this->changeFilter->method('forget')->willThrowException(new \RuntimeException('db gone'));
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testMarkedProductsAreSentWhateverTheirHashAndTheirMarksClearedAfterTheNotification(): void
+    {
+        $this->marks[1] = [11 => 't11', 20 => 't20'];
+        $this->changeFilter->expects($this->once())->method('filter')
+            ->with([1 => [10, 11, 12, 20]], [1 => [11, 20]])
+            ->willReturn([1 => ['changed' => [11, 20], 'hashes' => [11 => 'h11', 20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([11, 20], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+        $this->resendProducts->expects($this->once())->method('clear')->with(1, ['t11', 't20']);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testAFailedNotificationKeepsTheMarks(): void
+    {
+        $this->marks[1] = [11 => 't11'];
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->method('notify')->willReturn(false);
+        $this->resendProducts->expects($this->never())->method('clear');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testMarkedProductsAreSentWhenTheChangelogHasNothingNewAndTheCursorStays(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->marks[1] = [11 => 't11'];
+        $this->changelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [11]], [1 => [11]])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->willReturn(true);
+        $this->resendProducts->expects($this->once())->method('clear')->with(1, ['t11']);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testAMarkedProductWaitingForTheIndexIsHeldAndKeepsItsMark(): void
+    {
+        $this->marks[1] = [11 => 't11'];
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]], [1 => []])
+            ->willReturn([1 => ['changed' => [10], 'hashes' => [10 => 'a']]]);
+        $this->notifier->method('notify')->willReturn(true);
+        $this->resendProducts->expects($this->never())->method('clear');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[10, 12], [11]]], $this->heldUpdates);
+    }
+
+    public function testWithoutTheResendTableTheSyncWorksAsBefore(): void
+    {
+        $this->resendProducts = $this->createMock(ResendProducts::class);
+        $this->resendProducts->method('isAvailable')->willReturn(false);
+        $this->resendProducts->expects($this->never())->method('forStore');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]], [1 => []])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->willReturn(true);
 
         $this->cron([1])->execute();
 
@@ -197,7 +307,7 @@ class SyncChangedProductsTest extends TestCase
 
     public function testAHeldProductIsSentOnceItsCategoriesAreIndexed(): void
     {
-        $this->held[1] = [20];
+        $this->held[1] = [20 => false];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12, 20]])
             ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
         $this->notifier->expects($this->once())->method('notify')->with([20], 1, self::CURRENT_VERSION, true)
@@ -207,13 +317,13 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => [[10, 11, 12, 20], []]], $this->heldUpdates);
-        $this->assertSame([[IndexState::CATEGORIES, [10, 11, 12, 20], [20]]], $this->indexChecks);
+        $this->assertSame([[IndexState::CATEGORIES, [10, 11, 12, 20]]], $this->indexChecks);
     }
 
     public function testAHeldProductIsSentWhenNothingNewIsInTheChangelog(): void
     {
         $this->lastVersion = self::CURRENT_VERSION;
-        $this->held[1] = [20];
+        $this->held[1] = [20 => false];
         $this->changelogReader->expects($this->never())->method('getChangedProductIds');
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
             ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
@@ -228,7 +338,7 @@ class SyncChangedProductsTest extends TestCase
     public function testHeldProductsAreCheckedAgainWhenTheChangelogRangeHasNoProducts(): void
     {
         $this->changelogIds = [];
-        $this->held[1] = [20];
+        $this->held[1] = [20 => false];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
             ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
         $this->notifier->expects($this->once())->method('notify')->with([20])->willReturn(true);
@@ -292,9 +402,9 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
     }
 
-    public function testAProductHeldPastTheLimitIsSentWithAWarning(): void
+    public function testAProductHeldPastTheLimitIsSentWithAWarningAndStaysHeld(): void
     {
-        $this->held[1] = [11];
+        $this->held[1] = [11 => false];
         $this->notIndexed[IndexState::CATEGORIES] = [11, 12];
         $this->overdue[1] = [11];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11]])
@@ -303,12 +413,90 @@ class SyncChangedProductsTest extends TestCase
 
         $this->cron([1])->execute();
 
-        $this->assertSame([1 => [[10, 11], [12]]], $this->heldUpdates);
-        $warnings = array_values(array_filter($this->logs, static function (array $log): bool {
-            return $log[0] === 'warning';
-        }));
+        // Still held: once Magento has indexed it, it goes through the filter again.
+        $this->assertSame([1 => [[10], [11, 12]]], $this->heldUpdates);
+        $this->assertSame([1 => [11]], $this->sentAtLimit);
+        $warnings = $this->logsOf('warning');
         $this->assertCount(1, $warnings);
         $this->assertSame([11], $warnings[0][2]['product_ids']);
+    }
+
+    public function testAProductHeldPastTheLimitWithAnUnchangedHashIsStillMarkedAsSentAtTheLimit(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [11 => false];
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
+        $this->overdue[1] = [11];
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+        $this->notifier->expects($this->never())->method('notify');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[], [11]]], $this->heldUpdates);
+        $this->assertSame([1 => [11]], $this->sentAtLimit);
+    }
+
+    public function testAProductSentAtTheLimitIsNotSentAgainWhileMagentoStillHasNotIndexedIt(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [20 => true];
+        $this->notIndexed[IndexState::CATEGORIES] = [20];
+        $this->overdue[1] = [20];
+        $this->changeFilter->expects($this->never())->method('filter');
+        $this->notifier->expects($this->never())->method('notify');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[], [20]]], $this->heldUpdates);
+        $this->assertSame([], $this->sentAtLimit);
+        $this->assertSame([], $this->logsOf('warning'));
+    }
+
+    public function testAProductSentAtTheLimitWithANewChangeIsSentAgainAndStaysHeld(): void
+    {
+        $this->held[1] = [11 => true];
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
+        $this->overdue[1] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([11])->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[10, 12], [11]]], $this->heldUpdates);
+        $this->assertSame([], $this->logsOf('warning'));
+    }
+
+    public function testAProductSentAtTheLimitGoesThroughTheFilterAgainOnceIndexed(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [20 => true];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]], [1 => []])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([20])->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[20], []]], $this->heldUpdates);
+        $this->assertCount(1, array_filter($this->logsOf('info'), static function (array $log): bool {
+            return strpos($log[1], 'Indexed products sent at the hold limit') !== false;
+        }));
+    }
+
+    public function testAMarkedProductSentAtTheLimitIsSentWhateverItsHash(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [11 => true];
+        $this->marks[1] = [11 => 't11'];
+        $this->notIndexed[IndexState::CATEGORIES] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [11]], [1 => [11]])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([11])->willReturn(true);
+        $this->resendProducts->expects($this->once())->method('clear')->with(1, ['t11']);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[], [11]]], $this->heldUpdates);
     }
 
     public function testThePriceRuleIndexIsOnlyWaitedForOnWebsitesWithActiveRules(): void
@@ -348,9 +536,14 @@ class SyncChangedProductsTest extends TestCase
             $this->assertSame(15, $minutes);
             return $this->overdue[$storeId] ?? [];
         });
-        $heldProducts->method('update')->willReturnCallback(function (int $storeId, array $release, array $hold): void {
-            $this->heldUpdates[$storeId] = [$release, $hold];
-        });
+        $heldProducts->method('update')->willReturnCallback(
+            function (int $storeId, array $release, array $hold, array $sentAtLimit = []): void {
+                $this->heldUpdates[$storeId] = [$release, $hold];
+                if (!empty($sentAtLimit)) {
+                    $this->sentAtLimit[$storeId] = $sentAtLimit;
+                }
+            }
+        );
 
         return $heldProducts;
     }
@@ -400,8 +593,20 @@ class SyncChangedProductsTest extends TestCase
             $this->logger(),
             $this->changeFilter,
             $this->indexState,
-            $this->heldProducts
+            $this->heldProducts,
+            $this->resendProducts
         );
+    }
+
+    /**
+     * @param string $level
+     * @return array<int, array{0: string, 1: string, 2: array}>
+     */
+    private function logsOf(string $level): array
+    {
+        return array_values(array_filter($this->logs, static function (array $log) use ($level): bool {
+            return $log[0] === $level;
+        }));
     }
 
     private function logger(): AbstractLogger

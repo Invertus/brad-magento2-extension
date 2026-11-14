@@ -96,6 +96,67 @@ class ChangelogReader
     }
 
     /**
+     * Products among $productIds with a changelog row after $versionId
+     *
+     * @param int $versionId
+     * @param int[] $productIds
+     * @return int[]
+     */
+    public function getProductsChangedAfter(int $versionId, array $productIds): array
+    {
+        if (empty($productIds)) {
+            return [];
+        }
+
+        $connection = $this->resourceConnection->getConnection();
+        $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+        if (!$connection->isTableExists($tableName)) {
+            return [];
+        }
+
+        $changed = [];
+        foreach (array_chunk(array_values(array_unique(array_map('intval', $productIds))), 1000) as $batch) {
+            $changed[] = $connection->fetchCol(
+                $connection->select()
+                    ->distinct(true)
+                    ->from($tableName, [self::ENTITY_COLUMN])
+                    ->where(self::VERSION_COLUMN . ' > ?', $versionId)
+                    ->where(self::ENTITY_COLUMN . ' IN (?)', $batch)
+            );
+        }
+
+        return array_values(array_unique(array_map('intval', array_merge([], ...$changed))));
+    }
+
+    /**
+     * Products with an id from $fromId to $toId (null: no upper end) and a changelog row after $versionId
+     *
+     * @param int $versionId
+     * @param int $fromId
+     * @param int|null $toId
+     * @return int[]
+     */
+    public function getProductsChangedAfterInRange(int $versionId, int $fromId, ?int $toId): array
+    {
+        $connection = $this->resourceConnection->getConnection();
+        $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+        if (!$connection->isTableExists($tableName)) {
+            return [];
+        }
+
+        $select = $connection->select()
+            ->distinct(true)
+            ->from($tableName, [self::ENTITY_COLUMN])
+            ->where(self::VERSION_COLUMN . ' > ?', $versionId)
+            ->where(self::ENTITY_COLUMN . ' >= ?', $fromId);
+        if ($toId !== null) {
+            $select->where(self::ENTITY_COLUMN . ' <= ?', $toId);
+        }
+
+        return array_map('intval', $connection->fetchCol($select));
+    }
+
+    /**
      * Get current max version ID from changelog
      *
      * @return int

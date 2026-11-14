@@ -66,16 +66,13 @@ class IndexStateTest extends TestCase
         $this->assertContains(['view_id = ?', 'catalogrule_product'], $this->wheres);
     }
 
-    public function testDuringAFullReindexEveryLoggedProductAndEveryHeldOneWaits(): void
+    public function testDuringAFullReindexEveryProductWaits(): void
     {
+        // The hourly changelog cleanup may have deleted the rows of changes made before the reindex started.
         $this->connection->method('fetchRow')->willReturn(['mode' => 'enabled', 'status' => 'suspended', 'version_id' => '900']);
-        $this->connection->expects($this->once())->method('fetchCol')->willReturn(['10']);
+        $this->connection->expects($this->never())->method('fetchCol');
 
-        $waiting = $this->state()->notIndexed(IndexState::CATEGORIES, [10, 11, 12], [12, 99]);
-
-        sort($waiting);
-        $this->assertSame([10, 12], $waiting);
-        $this->assertNotContains(['version_id > ?', 900], $this->wheres);
+        $this->assertSame([10, 11, 12], $this->state()->notIndexed(IndexState::CATEGORIES, [10, 11, 12, 11]));
     }
 
     public function testUpdateOnSaveHoldsNothing(): void

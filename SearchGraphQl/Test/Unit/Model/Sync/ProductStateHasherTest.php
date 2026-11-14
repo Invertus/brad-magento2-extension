@@ -29,6 +29,16 @@ class ProductStateHasherTest extends TestCase
         $this->assertSame($this->hash($this->state()), $this->hash($this->state()));
     }
 
+    public function testASpecialPriceStartingChangesOnlyThatStoresHash(): void
+    {
+        $before = $this->state();
+        $after = $before;
+        $after['specialActive'][10][self::STORE] = true;
+
+        $this->assertNotSame($this->hash($before), $this->hash($after));
+        $this->assertSame($this->hash($before, self::OTHER_STORE), $this->hash($after, self::OTHER_STORE));
+    }
+
     public function testRowOrderDoesNotChangeTheHash(): void
     {
         $state = $this->state();

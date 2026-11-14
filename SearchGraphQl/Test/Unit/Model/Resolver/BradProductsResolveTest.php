@@ -12,9 +12,12 @@ use BradSearch\SearchGraphQl\Api\PriceCalculatorInterface;
 use BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator;
 use BradSearch\SearchGraphQl\Model\Price\CalculatedPriceMapper;
 use BradSearch\SearchGraphQl\Model\Resolver\BradProducts;
+use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Product\Collection;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
+use Magento\Framework\DB\Adapter\AdapterInterface;
+use Magento\Framework\DB\Select;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Schema\Type\ResolveInfo;
 use Magento\Store\Api\Data\StoreInterface;
@@ -35,6 +38,7 @@ class BradProductsResolveTest extends TestCase
     private Collection&MockObject $collection;
     private PriceCalculatorInterface&Stub $priceCalculator;
     private LoggerInterface&MockObject $logger;
+    private FetchRecorder&MockObject $fetchRecorder;
 
     protected function setUp(): void
     {
@@ -55,6 +59,7 @@ class BradProductsResolveTest extends TestCase
         $priceMapper->method('toGraphQlArray')->willReturn(['final_price' => ['value' => 1.0]]);
 
         $this->logger = $this->createMock(LoggerInterface::class);
+        $this->fetchRecorder = $this->createMock(FetchRecorder::class);
 
         $this->resolver = new BradProducts(
             $apiKeyValidator,
@@ -62,8 +67,99 @@ class BradProductsResolveTest extends TestCase
             $storeManager,
             $this->priceCalculator,
             $priceMapper,
-            $this->logger
+            $this->logger,
+            $this->fetchRecorder
         );
+    }
+
+    public function testTheSyncCursorIsReadBeforeThePageLoads(): void
+    {
+        $calls = [];
+        $this->fetchRecorder->method('cursor')->willReturnCallback(function () use (&$calls): ?int {
+            $calls[] = 'cursor';
+            return 400;
+        });
+        $this->collection->method('getIterator')->willReturnCallback(function () use (&$calls) {
+            $calls[] = 'load';
+            return new ArrayIterator([]);
+        });
+
+        $this->resolve();
+
+        $this->assertSame(['cursor', 'load'], $calls);
+    }
+
+    public function testNamedProductsAreRecordedWhetherOrNotTheyCameBack(): void
+    {
+        // BradSearch reads a named product it does not get back as removed.
+        $this->fetchRecorder->method('cursor')->with(1)->willReturn(400);
+        $this->priceCalculator->method('calculate')->willReturn(null);
+        $this->collectionYields([$this->product(11)]);
+        $this->fetchRecorder->expects($this->never())->method('recordRange');
+        $this->fetchRecorder->expects($this->once())->method('record')
+            ->with(1, 400, $this->callback(function (array $ids): bool {
+                return array_values(array_unique($ids)) === [11, 12, 13];
+            }));
+
+        $this->resolve(['pageSize' => 300, 'currentPage' => 0, 'filter' => ['entity_id' => ['in' => ['11', '12', '13']]]]);
+    }
+
+    public function testAFullFirstPageStandsForTheIdsUpToItsLastProduct(): void
+    {
+        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->priceCalculator->method('calculate')->willReturn(null);
+        $this->collectionYields([$this->product(5), $this->product(9)]);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 0, 9);
+
+        $this->resolve(['pageSize' => 2, 'currentPage' => 0]);
+    }
+
+    public function testALaterPageStartsAtThePreviousPagesLastProductAndTheLastPageHasNoEnd(): void
+    {
+        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->priceCalculator->method('calculate')->willReturn(null);
+        $this->collectionYields([$this->product(5)]);
+        $limits = [];
+        $select = $this->createMock(Select::class);
+        $select->method('limit')->willReturnCallback(function ($count, $offset) use ($select, &$limits) {
+            $limits[] = [$count, $offset];
+            return $select;
+        });
+        $select->method($this->logicalNot($this->equalTo('limit')))->willReturnSelf();
+        $this->collection->method('getSelect')->willReturn($select);
+        $connection = $this->createMock(AdapterInterface::class);
+        $connection->method('fetchOne')->willReturn('4');
+        $this->collection->method('getConnection')->willReturn($connection);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 4, null);
+
+        $this->resolve(['pageSize' => 2, 'currentPage' => 1]);
+
+        $this->assertSame([[1, 1]], $limits);
+    }
+
+    public function testAPagePastTheEndStartsAtTheCollectionsLastProduct(): void
+    {
+        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->collectionYields([]);
+        $select = $this->createMock(Select::class);
+        $select->method($this->anything())->willReturnSelf();
+        $this->collection->method('getSelect')->willReturn($select);
+        $connection = $this->createMock(AdapterInterface::class);
+        $connection->method('fetchOne')->willReturnOnConsecutiveCalls(false, '77');
+        $this->collection->method('getConnection')->willReturn($connection);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 77, null);
+
+        $this->resolve(['pageSize' => 2, 'currentPage' => 9]);
+    }
+
+    public function testNothingIsRecordedWithoutALiveSyncCursor(): void
+    {
+        $this->fetchRecorder->method('cursor')->willReturn(null);
+        $this->collectionYields([]);
+        $this->fetchRecorder->expects($this->never())->method('record');
+        $this->fetchRecorder->expects($this->never())->method('recordRange');
+
+        $this->resolve();
     }
 
     public function testOrdersThePageByEntityIdAscending(): void

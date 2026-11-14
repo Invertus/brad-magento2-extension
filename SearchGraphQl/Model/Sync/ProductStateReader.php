@@ -127,7 +127,46 @@ class ProductStateReader
             'children' => $this->readList('catalog_product_super_link', 'parent_id', 'product_id', $productIds),
             'bundle' => $this->readBundleSelections($productIds),
             'rules' => $this->readRulePrices($productIds, $ruleDates),
+            'specialDates' => $this->readSpecialPriceDates($productIds, $storeIds),
         ];
+    }
+
+    /**
+     * Raw special price dates: whether a special price applies depends on today, which a value hash
+     * cannot show.
+     *
+     * @param int[] $productIds
+     * @param int[] $storeIds
+     * @return array<int, array<string, array<int, string|null>>> product id => from|to => store id => value
+     */
+    private function readSpecialPriceDates(array $productIds, array $storeIds): array
+    {
+        $connection = $this->connection();
+        $codes = $connection->fetchPairs(
+            $connection->select()
+                ->from(['ea' => $this->table('eav_attribute')], ['attribute_id', 'attribute_code'])
+                ->joinInner(['et' => $this->table('eav_entity_type')], 'et.entity_type_id = ea.entity_type_id', [])
+                ->where('et.entity_type_code = ?', 'catalog_product')
+                ->where('ea.attribute_code IN (?)', ['special_from_date', 'special_to_date'])
+        );
+        if (empty($codes)) {
+            return [];
+        }
+
+        $select = $connection->select()
+            ->from($this->table('catalog_product_entity_datetime'), ['entity_id', 'attribute_id', 'store_id', 'value'])
+            ->where('entity_id IN (?)', $productIds)
+            ->where('attribute_id IN (?)', array_keys($codes))
+            ->where('store_id IN (?)', $storeIds);
+
+        $dates = [];
+        foreach ($connection->fetchAll($select) as $row) {
+            $part = $codes[$row['attribute_id']] === 'special_from_date' ? 'from' : 'to';
+            $dates[(int)$row['entity_id']][$part][(int)$row['store_id']] =
+                $row['value'] === null ? null : (string)$row['value'];
+        }
+
+        return $dates;
     }
 
     /**

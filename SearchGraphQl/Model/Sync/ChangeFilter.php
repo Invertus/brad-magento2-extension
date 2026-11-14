@@ -9,6 +9,7 @@ namespace BradSearch\SearchGraphQl\Model\Sync;
 use BradSearch\SearchGraphQl\Api\ProductHashAttributeProviderInterface;
 use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\Stdlib\DateTime\TimezoneInterface;
+use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
 
 /**
@@ -102,11 +103,17 @@ class ChangeFilter
      * Find the products whose hash moved, for several store views in one pass over the catalog.
      *
      * @param array<int, int[]> $productIdsByStore store id => changelog product ids
+     * @param array<int, int[]> $forcedByStore store id => product ids to count as changed whatever their hash
      * @return array<int, array{changed: int[], hashes: array<int, string>}> store id => changed ids
      *         and their new hashes, to pass to store() once BradSearch has accepted them
      */
-    public function filter(array $productIdsByStore): array
+    public function filter(array $productIdsByStore, array $forcedByStore = []): array
     {
+        $forced = [];
+        foreach ($forcedByStore as $storeId => $productIds) {
+            $forced[(int)$storeId] = array_flip(array_map('intval', $productIds));
+        }
+
         $storeIds = array_map('intval', array_keys($productIdsByStore));
         $contexts = [];
         $ruleDates = [];
@@ -141,6 +148,7 @@ class ChangeFilter
 
         foreach (array_chunk($allIds, self::BATCH_SIZE) as $batch) {
             $state = $this->reader->read($batch, array_merge([0], $storeIds), $attributeIds, $ruleDates);
+            $state['specialActive'] = $this->specialPricesActive($state['specialDates'] ?? [], $storeIds);
             $stored = $this->loadStored($batch, $storeIds);
 
             foreach ($storeIds as $storeId) {
@@ -151,7 +159,7 @@ class ChangeFilter
                     }
 
                     $hash = $this->hasher->hash($state, $productId, $storeId, $websiteId, $date, $defaultScopeIds);
-                    if (($stored[$storeId][$productId] ?? null) !== $hash) {
+                    if (($stored[$storeId][$productId] ?? null) !== $hash || isset($forced[$storeId][$productId])) {
                         $result[$storeId]['changed'][] = $productId;
                         $result[$storeId]['hashes'][$productId] = $hash;
                     }
@@ -181,6 +189,64 @@ class ChangeFilter
             }
             $connection->insertOnDuplicate($table, $rows, ['hash']);
         }
+    }
+
+    /**
+     * Forget what BradSearch was told about these products, so their next change is sent whatever its hash.
+     * For products sent without the filter: BradSearch may now hold something other than the stored hash.
+     *
+     * @param int[] $productIds
+     * @param int $storeId
+     * @return void
+     */
+    public function forget(array $productIds, int $storeId): void
+    {
+        $connection = $this->resource->getConnection();
+        $table = $this->resource->getTableName(self::STATE_TABLE);
+        // No table, no stored hashes: the filter fails and everything is sent anyway.
+        if (!$connection->isTableExists($table)) {
+            return;
+        }
+
+        $productIds = array_values(array_unique(array_map('intval', $productIds)));
+        foreach (array_chunk($productIds, self::BATCH_SIZE) as $batch) {
+            $connection->delete($table, ['store_id = ?' => $storeId, 'product_id IN (?)' => $batch]);
+        }
+    }
+
+    /**
+     * Whether each product's special price applies now, the way Magento's special price decides it: the
+     * store view's own dates or the default ones, against today in the admin scope.
+     *
+     * @param array<int, array<string, array<int, string|null>>> $dates From the reader
+     * @param int[] $storeIds
+     * @return array<int, array<int, bool>> product id => store id => applies now
+     */
+    private function specialPricesActive(array $dates, array $storeIds): array
+    {
+        $active = [];
+        foreach ($dates as $productId => $parts) {
+            foreach ($storeIds as $storeId) {
+                $from = $this->storeValue($parts['from'] ?? [], $storeId);
+                $to = $this->storeValue($parts['to'] ?? [], $storeId);
+                if ($from === null && $to === null) {
+                    continue;
+                }
+                $active[$productId][$storeId] = $this->timezone->isScopeDateInInterval(Store::ADMIN_CODE, $from, $to);
+            }
+        }
+
+        return $active;
+    }
+
+    /**
+     * @param array<int, string|null> $values store id => value
+     * @param int $storeId
+     * @return string|null The store view's value, even an empty one, else the default
+     */
+    private function storeValue(array $values, int $storeId): ?string
+    {
+        return array_key_exists($storeId, $values) ? $values[$storeId] : ($values[0] ?? null);
     }
 
     /**
