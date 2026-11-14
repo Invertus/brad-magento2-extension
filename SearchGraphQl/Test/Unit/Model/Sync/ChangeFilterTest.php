@@ -39,6 +39,15 @@ class ChangeFilterTest extends TestCase
     /** @var array<int, array<string, string>> product id => what the reader returns as its entity row */
     private array $catalog = [];
 
+    /** @var array<int, array<string, array<int, string|null>>> product id => from|to => store id => date */
+    private array $specialDates = [];
+
+    /** @var bool What Magento's own date check answers for a special price */
+    private bool $specialPriceApplies = false;
+
+    /** @var array<int, array{0: mixed, 1: mixed, 2: mixed}> scope, from, to of each date check */
+    private array $dateChecks = [];
+
     protected function setUp(): void
     {
         $this->connection = $this->createMock(AdapterInterface::class);
@@ -58,7 +67,10 @@ class ChangeFilterTest extends TestCase
         $this->reader = $this->createMock(ProductStateReader::class);
         $this->reader->method('getAttributeIdsByType')->willReturn(['varchar' => [73]]);
         $this->reader->method('read')->willReturnCallback(function (array $productIds): array {
-            return ['entity' => array_intersect_key($this->catalog, array_flip($productIds))];
+            return [
+                'entity' => array_intersect_key($this->catalog, array_flip($productIds)),
+                'specialDates' => array_intersect_key($this->specialDates, array_flip($productIds)),
+            ];
         });
 
         $this->storeManager = $this->createMock(StoreManagerInterface::class);
@@ -70,6 +82,87 @@ class ChangeFilterTest extends TestCase
 
         $this->timezone = $this->createMock(TimezoneInterface::class);
         $this->timezone->method('scopeDate')->willReturn(new \DateTime('2026-11-11 10:00:00'));
+        $this->timezone->method('isScopeDateInInterval')->willReturnCallback(function ($scope, $from, $to): bool {
+            $this->dateChecks[] = [$scope, $from, $to];
+            return $this->specialPriceApplies;
+        });
+    }
+
+    public function testAForcedProductIsChangedEvenWithAnEqualHash(): void
+    {
+        $this->catalog = [10 => ['sku' => 'a'], 11 => ['sku' => 'b']];
+        $filter = $this->filter();
+        $this->stored[1] = $filter->filter([1 => [10, 11]])[1]['hashes'];
+
+        $result = $filter->filter([1 => [10, 11]], [1 => [11]]);
+
+        $this->assertSame([11], $result[1]['changed']);
+        $this->assertSame($this->stored[1][11], $result[1]['hashes'][11]);
+    }
+
+    public function testASpecialPriceStartingIsAChangeWithNoOtherChange(): void
+    {
+        $this->catalog = [10 => ['sku' => 'a']];
+        $this->specialDates = [10 => ['from' => [0 => '2026-11-12 00:00:00']]];
+        $filter = $this->filter();
+        $this->stored[1] = $filter->filter([1 => [10]])[1]['hashes'];
+
+        $this->specialPriceApplies = true;
+        $result = $filter->filter([1 => [10]]);
+
+        $this->assertSame([10], $result[1]['changed']);
+        $this->assertSame(['admin', '2026-11-12 00:00:00', null], $this->dateChecks[0]);
+    }
+
+    public function testTheStoreViewsOwnSpecialPriceDatesWinEvenWhenEmpty(): void
+    {
+        $this->catalog = [10 => ['sku' => 'a']];
+        $this->specialDates = [10 => [
+            'from' => [0 => '2026-11-12 00:00:00', 1 => null],
+            'to' => [0 => '2026-11-30 00:00:00'],
+        ]];
+
+        $this->filter()->filter([1 => [10], 2 => [10]]);
+
+        $this->assertSame([
+            ['admin', null, '2026-11-30 00:00:00'],
+            ['admin', '2026-11-12 00:00:00', '2026-11-30 00:00:00'],
+        ], $this->dateChecks);
+    }
+
+    public function testAProductWithoutSpecialPriceDatesIsNotChecked(): void
+    {
+        $this->catalog = [10 => ['sku' => 'a']];
+        $this->specialDates = [10 => ['from' => [0 => null]]];
+
+        $this->filter()->filter([1 => [10]]);
+
+        $this->assertSame([], $this->dateChecks);
+    }
+
+    public function testForgetDeletesTheStoredHashesInBatches(): void
+    {
+        $this->connection->method('isTableExists')->willReturn(true);
+        $calls = [];
+        $this->connection->method('delete')->willReturnCallback(function (string $table, array $where) use (&$calls): int {
+            $calls[] = [$table, $where];
+            return 0;
+        });
+
+        $this->filter()->forget(range(1, 1001), 7);
+
+        $this->assertCount(2, $calls);
+        $this->assertSame('bradsearch_product_state', $calls[0][0]);
+        $this->assertSame(['store_id = ?' => 7, 'product_id IN (?)' => range(1, 1000)], $calls[0][1]);
+        $this->assertSame(['store_id = ?' => 7, 'product_id IN (?)' => [1001]], $calls[1][1]);
+    }
+
+    public function testForgetWithoutTheTableDoesNothing(): void
+    {
+        $this->connection->method('isTableExists')->willReturn(false);
+        $this->connection->expects($this->never())->method('delete');
+
+        $this->filter()->forget([1], 7);
     }
 
     public function testOnlyProductsWhoseHashMovedAreChanged(): void

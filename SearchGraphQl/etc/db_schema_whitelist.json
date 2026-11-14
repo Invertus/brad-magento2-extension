@@ -26,5 +26,15 @@
         "constraint": {
             "PRIMARY": true
         }
+    },
+    "bradsearch_resend_product": {
+        "column": {
+            "store_id": true,
+            "product_id": true,
+            "token": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
     }
 }

@@ -12,6 +12,7 @@ use BradSearch\SearchGraphQl\Model\SyncState;
 use BradSearch\SearchGraphQl\Model\SyncStateFactory;
 use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
+use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
@@ -35,8 +36,14 @@ class SyncChangedProductsTest extends TestCase
     /** @var ChangeFilter&MockObject */
     private $changeFilter;
 
+    /** @var ResendProducts&MockObject */
+    private $resendProducts;
+
     /** @var array<int, int> store id => saved cursor */
     private array $savedVersions = [];
+
+    /** @var int The cursor every store starts the run with */
+    private int $startVersion = 400;
 
     protected function setUp(): void
     {
@@ -55,11 +62,14 @@ class SyncChangedProductsTest extends TestCase
         });
 
         $this->changeFilter = $this->createMock(ChangeFilter::class);
+
+        $this->resendProducts = $this->createMock(ResendProducts::class);
+        $this->resendProducts->method('isAvailable')->willReturn(true);
     }
 
     public function testSendsOnlyChangedProductsAndStoresTheirHashesAfterTheNotificationSucceeded(): void
     {
-        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]], [1 => []])
             ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
         $this->notifier->expects($this->once())->method('notify')->with([11], 1, self::CURRENT_VERSION, true)->willReturn(true);
         $this->changeFilter->expects($this->once())->method('store')->with([11 => 'h11'], 1);
@@ -91,12 +101,93 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
     }
 
-    public function testABrokenFilterSendsEveryChangelogProductAndStoresNoHash(): void
+    public function testABrokenFilterSendsEveryChangelogProductAndForgetsTheirHashes(): void
     {
         $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('table missing'));
         $this->notifier->expects($this->once())->method('notify')->with([10, 11, 12], 1, self::CURRENT_VERSION, false)
             ->willReturn(true);
         $this->changeFilter->expects($this->never())->method('store');
+        // BradSearch now holds what it fetches, so a later change back to the stored state must still be sent.
+        $this->changeFilter->expects($this->once())->method('forget')->with([10, 11, 12], 1);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testABrokenFilterWithAFailedNotificationForgetsNothing(): void
+    {
+        $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('db gone'));
+        $this->notifier->method('notify')->willReturn(false);
+        $this->changeFilter->expects($this->never())->method('forget');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testAFailedForgetKeepsTheCursorSoTheProductsAreSentAgain(): void
+    {
+        $this->changeFilter->method('filter')->willThrowException(new \RuntimeException('filter broke'));
+        $this->notifier->method('notify')->willReturn(true);
+        $this->changeFilter->method('forget')->willThrowException(new \RuntimeException('db gone'));
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testMarkedProductsAreSentWhateverTheirHashAndTheirMarksClearedAfterTheNotification(): void
+    {
+        $this->resendProducts->method('forStore')->with(1)->willReturn([11 => 't11', 20 => 't20']);
+        $this->changeFilter->expects($this->once())->method('filter')
+            ->with([1 => [10, 11, 12, 20]], [1 => [11, 20]])
+            ->willReturn([1 => ['changed' => [11, 20], 'hashes' => [11 => 'h11', 20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([11, 20], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+        $this->changeFilter->expects($this->once())->method('store')->with([11 => 'h11', 20 => 'h20'], 1);
+        $this->resendProducts->expects($this->once())->method('clear')->with(1, ['t11', 't20']);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testAFailedNotificationKeepsTheMarks(): void
+    {
+        $this->resendProducts->method('forStore')->willReturn([11 => 't11']);
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->method('notify')->willReturn(false);
+        $this->resendProducts->expects($this->never())->method('clear');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testMarkedProductsAreSentWhenTheChangelogHasNothingNewAndTheCursorStays(): void
+    {
+        $this->startVersion = self::CURRENT_VERSION;
+        $this->resendProducts->method('forStore')->willReturn([11 => 't11']);
+        $this->changelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [11]], [1 => [11]])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->willReturn(true);
+        $this->resendProducts->expects($this->once())->method('clear')->with(1, ['t11']);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    public function testWithoutTheResendTableTheSyncWorksAsBefore(): void
+    {
+        $this->resendProducts = $this->createMock(ResendProducts::class);
+        $this->resendProducts->method('isAvailable')->willReturn(false);
+        $this->resendProducts->expects($this->never())->method('forStore');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]], [1 => []])
+            ->willReturn([1 => ['changed' => [11], 'hashes' => [11 => 'h11']]]);
+        $this->notifier->expects($this->once())->method('notify')->willReturn(true);
 
         $this->cron([1])->execute();
 
@@ -105,7 +196,8 @@ class SyncChangedProductsTest extends TestCase
 
     public function testAllStoresAreFilteredInOnePassAndSentSeparately(): void
     {
-        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12], 2 => [10, 11, 12]])
+        $this->changeFilter->expects($this->once())->method('filter')
+            ->with([1 => [10, 11, 12], 2 => [10, 11, 12]], [1 => [], 2 => []])
             ->willReturn([
                 1 => ['changed' => [10], 'hashes' => [10 => 'a']],
                 2 => ['changed' => [12], 'hashes' => [12 => 'b']],
@@ -148,7 +240,7 @@ class SyncChangedProductsTest extends TestCase
                 ->onlyMethods(['getId'])
                 ->getMock();
             $state->method('getId')->willReturn(1);
-            $state->setLastVersionId(400);
+            $state->setLastVersionId($this->startVersion);
             return $state;
         });
         $this->syncStateResource->method('loadByStoreId')->willReturnCallback(
@@ -165,7 +257,8 @@ class SyncChangedProductsTest extends TestCase
             $this->syncStateResource,
             $storeManager,
             new NullLogger(),
-            $this->changeFilter
+            $this->changeFilter,
+            $this->resendProducts
         );
     }
 }

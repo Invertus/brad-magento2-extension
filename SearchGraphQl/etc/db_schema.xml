@@ -33,4 +33,13 @@
             <column name="product_id"/>
         </constraint>
     </table>
+    <table name="bradsearch_resend_product" resource="default" engine="innodb" comment="BradSearch Products To Send Again">
+        <column xsi:type="smallint" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="varchar" name="token" length="32" nullable="false" comment="Token of this mark"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="store_id"/>
+            <column name="product_id"/>
+        </constraint>
+    </table>
 </schema>

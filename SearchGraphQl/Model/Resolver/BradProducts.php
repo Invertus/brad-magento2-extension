@@ -9,11 +9,13 @@ namespace BradSearch\SearchGraphQl\Model\Resolver;
 use BradSearch\SearchGraphQl\Api\PriceCalculatorInterface;
 use BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator;
 use BradSearch\SearchGraphQl\Model\Price\CalculatedPriceMapper;
+use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\Product\Attribute\Source\Status;
 use Magento\Catalog\Model\Product\Visibility;
 use Magento\Catalog\Model\ResourceModel\Product\Collection;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
+use Magento\Framework\DB\Select;
 use Magento\Framework\GraphQl\Config\Element\Field;
 use Magento\Framework\GraphQl\Exception\GraphQlAuthorizationException;
 use Magento\Framework\GraphQl\Exception\GraphQlInputException;
@@ -82,12 +84,18 @@ class BradProducts implements ResolverInterface
     private LoggerInterface $logger;
 
     /**
+     * @var FetchRecorder
+     */
+    private FetchRecorder $fetchRecorder;
+
+    /**
      * @param ApiKeyValidator $apiKeyValidator
      * @param CollectionFactory $collectionFactory
      * @param StoreManagerInterface $storeManager
      * @param PriceCalculatorInterface $priceCalculator
      * @param CalculatedPriceMapper $priceMapper
      * @param LoggerInterface $logger
+     * @param FetchRecorder $fetchRecorder
      */
     public function __construct(
         ApiKeyValidator $apiKeyValidator,
@@ -95,7 +103,8 @@ class BradProducts implements ResolverInterface
         StoreManagerInterface $storeManager,
         PriceCalculatorInterface $priceCalculator,
         CalculatedPriceMapper $priceMapper,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        FetchRecorder $fetchRecorder
     ) {
         $this->apiKeyValidator = $apiKeyValidator;
         $this->collectionFactory = $collectionFactory;
@@ -103,6 +112,7 @@ class BradProducts implements ResolverInterface
         $this->priceCalculator = $priceCalculator;
         $this->priceMapper = $priceMapper;
         $this->logger = $logger;
+        $this->fetchRecorder = $fetchRecorder;
     }
 
     /**
@@ -127,6 +137,9 @@ class BradProducts implements ResolverInterface
             throw new GraphQlInputException(__('currentPage must be >= 0.'));
         }
 
+        // Read before any product data, so a change made while BradSearch reads is after this cursor.
+        $syncCursor = $this->fetchRecorder->cursor($storeId);
+
         $collection = $this->collectionFactory->create();
 
         $collection->addAttributeToSelect(self::COLLECTION_ATTRIBUTES);
@@ -140,12 +153,15 @@ class BradProducts implements ResolverInterface
         $collection->addAttributeToFilter('visibility', ['neq' => Visibility::VISIBILITY_NOT_VISIBLE]);
 
         // Apply filters
+        $namedIds = null;
         if (!empty($filters['entity_id']['eq'])) {
             $collection->addFieldToFilter('entity_id', ['eq' => (int)$filters['entity_id']['eq']]);
+            $namedIds = [(int)$filters['entity_id']['eq']];
         }
         if (!empty($filters['entity_id']['in'])) {
             $entityIds = array_map('intval', $filters['entity_id']['in']);
             $collection->addFieldToFilter('entity_id', ['in' => $entityIds]);
+            $namedIds = array_merge($namedIds ?? [], $entityIds);
         }
 
         // The sync fetches pages over hours and treats a product it never saw as removed from the
@@ -158,8 +174,10 @@ class BradProducts implements ResolverInterface
 
         $items = [];
         $skipped = 0;
+        $fetchedIds = [];
         foreach ($collection as $product) {
             $entityId = $product->getId();
+            $fetchedIds[] = (int)$entityId;
 
             try {
                 $items[] = $this->buildItem($product, $storeId);
@@ -174,6 +192,19 @@ class BradProducts implements ResolverInterface
                     'error' => $e->getMessage(),
                     'exception' => get_class($e),
                 ]);
+            }
+        }
+
+        if ($syncCursor !== null) {
+            if ($namedIds !== null) {
+                $this->fetchRecorder->record($storeId, $syncCursor, array_merge($namedIds, $fetchedIds));
+            } else {
+                $this->fetchRecorder->recordRange(
+                    $storeId,
+                    $syncCursor,
+                    $currentPage === 0 ? 0 : $this->previousPageLastId($collection, $currentPage * $pageSize),
+                    count($fetchedIds) === $pageSize ? max($fetchedIds) : null
+                );
             }
         }
 
@@ -201,6 +232,33 @@ class BradProducts implements ResolverInterface
      * @param int $storeId
      * @return array
      */
+    /**
+     * The id this collection now has just before $offset, so a page's range starts where the previous page
+     * ended even when products between the two were missing when this page was read
+     *
+     * @param Collection $collection
+     * @param int $offset
+     * @return int 0 when the collection has fewer products than $offset
+     */
+    private function previousPageLastId(Collection $collection, int $offset): int
+    {
+        $select = clone $collection->getSelect();
+        $select->reset(Select::COLUMNS)
+            ->reset(Select::LIMIT_COUNT)
+            ->reset(Select::LIMIT_OFFSET)
+            ->columns('e.entity_id')
+            ->limit(1, $offset - 1);
+        $id = $collection->getConnection()->fetchOne($select);
+        if ($id !== false && $id !== null) {
+            return (int)$id;
+        }
+
+        // Past the end: this page stands for every id after the collection's last product.
+        $select->reset(Select::ORDER)->reset(Select::LIMIT_OFFSET)->order('e.entity_id DESC')->limit(1);
+
+        return (int)$collection->getConnection()->fetchOne($select);
+    }
+
     private function buildItem(Product $product, int $storeId): array
     {
         $productData = $product->getData();

@@ -43,6 +43,7 @@ class ProductStateHasher
             'defaults' => $this->defaultValues($values, $defaultScopeAttributeIds),
             'rule' => $state['rules'][$productId][$websiteId][$date] ?? null,
             'categoryIndex' => $this->sorted($state['categoryIndex'][$productId][$storeId] ?? []),
+            'specialActive' => $state['specialActive'][$productId][$storeId] ?? null,
         ];
 
         foreach (self::LIST_PARTS as $part) {
