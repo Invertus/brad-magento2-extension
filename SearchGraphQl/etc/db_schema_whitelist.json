@@ -27,6 +27,17 @@
             "PRIMARY": true
         }
     },
+    "bradsearch_held_product": {
+        "column": {
+            "store_id": true,
+            "product_id": true,
+            "held_since": true,
+            "sent_at_limit": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
+    },
     "bradsearch_resend_product": {
         "column": {
             "store_id": true,
