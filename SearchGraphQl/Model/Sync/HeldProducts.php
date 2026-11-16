@@ -96,6 +96,40 @@ class HeldProducts
     }
 
     /**
+     * Held products of a store that were not sent at the hold limit: no stored hash describes their changes.
+     *
+     * @param int $storeId
+     * @param int[]|null $productIds Null for every product in the id range
+     * @param int $fromId
+     * @param int|null $toId Null: no end
+     * @return int[]
+     */
+    public function notSentAmong(int $storeId, ?array $productIds, int $fromId = 0, ?int $toId = null): array
+    {
+        $connection = $this->resource->getConnection();
+        $select = $connection->select()
+            ->from($this->resource->getTableName(self::TABLE), ['product_id'])
+            ->where('store_id = ?', $storeId)
+            ->where('sent_at_limit = ?', 0);
+
+        if ($productIds === null) {
+            $select->where('product_id >= ?', $fromId);
+            if ($toId !== null) {
+                $select->where('product_id <= ?', $toId);
+            }
+            return array_map('intval', $connection->fetchCol($select));
+        }
+
+        $held = [];
+        foreach (array_chunk($productIds, self::BATCH_SIZE) as $batch) {
+            $batchSelect = clone $select;
+            $held[] = $connection->fetchCol($batchSelect->where('product_id IN (?)', $batch));
+        }
+
+        return array_map('intval', array_merge([], ...$held));
+    }
+
+    /**
      * @param int $storeId
      * @param int $minutes
      * @return int[] The products this store has held longer than $minutes

@@ -54,6 +54,41 @@ class HeldProductsTest extends TestCase
         $this->assertSame([11 => false, 12 => true], $this->held()->forStore(1));
     }
 
+    public function testNotSentAmongReadsOnlyProductsNotSentAtTheLimit(): void
+    {
+        $wheres = [];
+        $select = $this->createMock(\Magento\Framework\DB\Select::class);
+        $select->method('where')->willReturnCallback(function (string $condition, $value = null) use (&$wheres, $select) {
+            $wheres[] = [$condition, $value];
+            return $select;
+        });
+        $select->method('from')->willReturnSelf();
+        $this->connection->method('select')->willReturn($select);
+        $this->connection->expects($this->once())->method('fetchCol')->willReturn(['11']);
+
+        $this->assertSame([11], $this->held()->notSentAmong(1, [11, 12]));
+        $this->assertContains(['store_id = ?', 1], $wheres);
+        $this->assertContains(['sent_at_limit = ?', 0], $wheres);
+        $this->assertContains(['product_id IN (?)', [11, 12]], $wheres);
+    }
+
+    public function testNotSentAmongAnIdRange(): void
+    {
+        $wheres = [];
+        $select = $this->createMock(\Magento\Framework\DB\Select::class);
+        $select->method('where')->willReturnCallback(function (string $condition, $value = null) use (&$wheres, $select) {
+            $wheres[] = [$condition, $value];
+            return $select;
+        });
+        $select->method('from')->willReturnSelf();
+        $this->connection->method('select')->willReturn($select);
+        $this->connection->method('fetchCol')->willReturn(['5', '9']);
+
+        $this->assertSame([5, 9], $this->held()->notSentAmong(2, null, 4, 90));
+        $this->assertContains(['product_id >= ?', 4], $wheres);
+        $this->assertContains(['product_id <= ?', 90], $wheres);
+    }
+
     public function testUpdateWithNothingToChangeWritesNothing(): void
     {
         $this->connection->expects($this->never())->method('delete');

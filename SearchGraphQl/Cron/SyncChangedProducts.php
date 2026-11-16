@@ -364,6 +364,9 @@ class SyncChangedProducts
 
         try {
             $categories = array_fill_keys($this->indexState->notIndexed(IndexState::CATEGORIES, $all), true);
+            $stock = $this->indexState->stockWaitsForIndex()
+                ? array_fill_keys($this->indexState->notIndexed(IndexState::STOCK, $all), true)
+                : [];
             $ruleWebsites = array_fill_keys($this->indexState->websitesWithPriceRules(), true);
             $rules = empty($ruleWebsites)
                 ? []
@@ -373,7 +376,9 @@ class SyncChangedProducts
             foreach ($pending as $storeId => [, $productIds]) {
                 $withRules = isset($ruleWebsites[(int)$this->storeManager->getStore($storeId)->getWebsiteId()]);
                 foreach ($productIds as $productId) {
-                    if (isset($categories[$productId]) || ($withRules && isset($rules[$productId]))) {
+                    if (isset($categories[$productId]) || isset($stock[$productId])
+                        || ($withRules && isset($rules[$productId]))
+                    ) {
                         $waiting[$storeId][$productId] = true;
                     }
                 }

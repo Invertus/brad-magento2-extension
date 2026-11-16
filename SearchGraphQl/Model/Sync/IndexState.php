@@ -7,19 +7,32 @@ declare(strict_types=1);
 namespace BradSearch\SearchGraphQl\Model\Sync;
 
 use Magento\Framework\App\ResourceConnection;
+use Magento\Framework\Module\Manager as ModuleManager;
 
 /**
  * Tells which products have a change that one of Magento's scheduled indexes has not processed yet.
  *
- * `bradProducts` reads categories from the category index and catalog rule prices from the rule price
- * index. The sync job runs in a different cron group than the index job, so a product sent before the
- * index job runs is fetched with its old categories or old rule price, and nothing sends it again.
+ * `bradProducts` reads categories from the category index, catalog rule prices from the rule price
+ * index and the stock status from the stock index. The sync job runs in a different cron group than the
+ * index job, so a product sent before the index job runs is fetched with its old data, and nothing sends
+ * it again.
  */
 class IndexState
 {
     public const CATEGORIES = 'catalog_product_category';
 
     public const PRICE_RULES = 'catalogrule_product';
+
+    public const STOCK = 'cataloginventory_stock';
+
+    /**
+     * The indexers whose full reindex suspends each view: its own and those sharing its index.
+     */
+    private const INDEXERS = [
+        self::CATEGORIES => ['catalog_category_product', 'catalog_product_category'],
+        self::PRICE_RULES => ['catalogrule_rule', 'catalogrule_product'],
+        self::STOCK => ['cataloginventory_stock'],
+    ];
 
     private const BATCH_SIZE = 1000;
 
@@ -29,11 +42,29 @@ class IndexState
     private ResourceConnection $resource;
 
     /**
-     * @param ResourceConnection $resource
+     * @var ModuleManager
      */
-    public function __construct(ResourceConnection $resource)
+    private ModuleManager $moduleManager;
+
+    /**
+     * @param ResourceConnection $resource
+     * @param ModuleManager $moduleManager
+     */
+    public function __construct(ResourceConnection $resource, ModuleManager $moduleManager)
     {
         $this->resource = $resource;
+        $this->moduleManager = $moduleManager;
+    }
+
+    /**
+     * Without Magento's inventory modules a stock save leaves the stock status to the stock index, and
+     * bradProducts reads the status. With them, the save writes the status itself.
+     *
+     * @return bool
+     */
+    public function stockWaitsForIndex(): bool
+    {
+        return !$this->moduleManager->isEnabled('Magento_InventoryCatalog');
     }
 
     /**
@@ -63,7 +94,9 @@ class IndexState
         // A full reindex moves the version to the end when it starts, and its new tables go live only when
         // it ends. The hourly changelog cleanup may delete the rows of changes made before it started, so
         // the log cannot tell which products read old data until then: every product waits.
-        if ($state['status'] === 'suspended') {
+        // A reindex that failed leaves the view idle with that version, the old tables live and the indexer
+        // invalid until it is rebuilt, so every product waits for that rebuild too.
+        if ($state['status'] === 'suspended' || $this->rebuildPending($viewId)) {
             return $productIds;
         }
 
@@ -79,6 +112,22 @@ class IndexState
         }
 
         return array_values(array_unique(array_map('intval', array_merge([], ...$waiting))));
+    }
+
+    /**
+     * @param string $viewId
+     * @return bool True while an indexer of the view is not valid: being rebuilt, or waiting for a rebuild
+     */
+    private function rebuildPending(string $viewId): bool
+    {
+        $connection = $this->resource->getConnection();
+
+        return (int)$connection->fetchOne(
+            $connection->select()
+                ->from($this->resource->getTableName('indexer_state'), ['COUNT(*)'])
+                ->where('indexer_id IN (?)', self::INDEXERS[$viewId] ?? [$viewId])
+                ->where('status <> ?', 'valid')
+        ) > 0;
     }
 
     /**

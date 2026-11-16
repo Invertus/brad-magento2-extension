@@ -71,6 +71,8 @@ class SyncChangedProductsTest extends TestCase
     /** @var int[] Websites with an active catalog price rule */
     private array $ruleWebsites = [];
 
+    private bool $stockWaits = false;
+
     /** @var array<int, int> store id => website id (default 1) */
     private array $websites = [];
 
@@ -116,6 +118,9 @@ class SyncChangedProductsTest extends TestCase
         );
         $this->indexState->method('websitesWithPriceRules')->willReturnCallback(function (): array {
             return $this->ruleWebsites;
+        });
+        $this->indexState->method('stockWaitsForIndex')->willReturnCallback(function (): bool {
+            return $this->stockWaits;
         });
 
         $this->heldProducts = $this->heldProductsMock(true);
@@ -525,6 +530,28 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1, 9])->execute();
 
         $this->assertSame([1 => [[10, 11, 12], []], 9 => [[10, 12], [11]]], $this->heldUpdates);
+    }
+
+    public function testWithoutTheInventoryModulesAStockChangeWaitsForTheStockIndex(): void
+    {
+        $this->stockWaits = true;
+        $this->notIndexed[IndexState::STOCK] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[10, 12], [11]]], $this->heldUpdates);
+        $this->assertSame([IndexState::CATEGORIES, IndexState::STOCK], array_column($this->indexChecks, 0));
+    }
+
+    public function testWithTheInventoryModulesTheStockIndexIsNotRead(): void
+    {
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertNotContains(IndexState::STOCK, array_column($this->indexChecks, 0));
     }
 
     public function testWithoutActivePriceRulesTheRuleIndexIsNotRead(): void

@@ -8,6 +8,7 @@ namespace BradSearch\SearchGraphQl\Test\Unit\Model\Sync;
 
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
+use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Framework\App\ResourceConnection;
@@ -31,6 +32,9 @@ class FetchRecorderTest extends TestCase
     /** @var WebhookNotifier&MockObject */
     private $notifier;
 
+    /** @var HeldProducts&MockObject */
+    private $heldProducts;
+
     protected function setUp(): void
     {
         $this->connection = $this->createMock(AdapterInterface::class);
@@ -42,6 +46,9 @@ class FetchRecorderTest extends TestCase
         $this->resendProducts->method('isAvailable')->willReturn(true);
         $this->notifier = $this->createMock(WebhookNotifier::class);
         $this->notifier->method('isSyncEnabled')->willReturn(true);
+        $this->heldProducts = $this->createMock(HeldProducts::class);
+        $this->heldProducts->method('isAvailable')->willReturn(true);
+        $this->heldProducts->method('notSentAmong')->willReturn([]);
     }
 
     public function testTheCursorIsTheStoresSyncState(): void
@@ -96,6 +103,49 @@ class FetchRecorderTest extends TestCase
         $recorder->flush();
     }
 
+    public function testAFetchedProductHeldForTheIndexIsMarked(): void
+    {
+        // The cursor moved past the held product's changes, but no hash describes them: BradSearch may have
+        // read a state that is undone before the product is released.
+        $this->changelogReader->method('getProductsChangedAfter')->willReturn([12]);
+        $this->heldProducts = $this->createMock(HeldProducts::class);
+        $this->heldProducts->method('isAvailable')->willReturn(true);
+        $this->heldProducts->expects($this->once())->method('notSentAmong')
+            ->with(1, [11, 12, 13], 0, null)->willReturn([11, 12]);
+        $this->resendProducts->expects($this->once())->method('mark')->with(1, [12, 11]);
+
+        $recorder = $this->recorder();
+        $recorder->record(1, 400, [11, 12, 13]);
+        $recorder->flush();
+    }
+
+    public function testAPageMarksTheHeldProductsInItsRange(): void
+    {
+        $this->changelogReader->method('getProductsChangedAfterInRange')->willReturn([]);
+        $this->heldProducts = $this->createMock(HeldProducts::class);
+        $this->heldProducts->method('isAvailable')->willReturn(true);
+        $this->heldProducts->expects($this->once())->method('notSentAmong')
+            ->with(2, null, 4, 90)->willReturn([50]);
+        $this->resendProducts->expects($this->once())->method('mark')->with(2, [50]);
+
+        $recorder = $this->recorder();
+        $recorder->recordRange(2, 400, 4, 90);
+        $recorder->flush();
+    }
+
+    public function testWithoutTheHeldTableOnlyTheChangelogCounts(): void
+    {
+        $this->changelogReader->method('getProductsChangedAfter')->willReturn([12]);
+        $this->heldProducts = $this->createMock(HeldProducts::class);
+        $this->heldProducts->method('isAvailable')->willReturn(false);
+        $this->heldProducts->expects($this->never())->method('notSentAmong');
+        $this->resendProducts->expects($this->once())->method('mark')->with(1, [12]);
+
+        $recorder = $this->recorder();
+        $recorder->record(1, 400, [11, 12]);
+        $recorder->flush();
+    }
+
     public function testNothingChangedMarksNothing(): void
     {
         $this->changelogReader->method('getProductsChangedAfter')->willReturn([]);
@@ -140,6 +190,13 @@ class FetchRecorderTest extends TestCase
         $resource->method('getConnection')->willReturn($this->connection);
         $resource->method('getTableName')->willReturnArgument(0);
 
-        return new FetchRecorder($resource, $this->changelogReader, $this->resendProducts, $this->notifier, new NullLogger());
+        return new FetchRecorder(
+            $resource,
+            $this->changelogReader,
+            $this->resendProducts,
+            $this->heldProducts,
+            $this->notifier,
+            new NullLogger()
+        );
     }
 }

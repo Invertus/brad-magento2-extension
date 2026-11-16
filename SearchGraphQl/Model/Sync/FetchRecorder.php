@@ -14,7 +14,10 @@ use Psr\Log\LoggerInterface;
  *
  * The store's sync cursor is read before any product data, and the changelog after the whole request
  * has read its data. Any change BradSearch may have read in a state the stored hash does not describe
- * is then in the changelog after that cursor, so the product is marked to be sent again.
+ * is then in the changelog after that cursor, or belongs to a product held for Magento's index (the
+ * cursor moved past its changes, but no hash was stored for them), so the product is marked to be sent
+ * again. A product already sent at the hold limit is not marked: it has a hash, any new change sends it
+ * again, and it is checked again once indexed; marking it would send it on every fetch while it waits.
  */
 class FetchRecorder
 {
@@ -42,6 +45,16 @@ class FetchRecorder
     private ResendProducts $resendProducts;
 
     /**
+     * @var HeldProducts
+     */
+    private HeldProducts $heldProducts;
+
+    /**
+     * @var bool|null
+     */
+    private ?bool $holding = null;
+
+    /**
      * @var WebhookNotifier
      */
     private WebhookNotifier $webhookNotifier;
@@ -55,6 +68,7 @@ class FetchRecorder
      * @param ResourceConnection $resource
      * @param ChangelogReader $changelogReader
      * @param ResendProducts $resendProducts
+     * @param HeldProducts $heldProducts
      * @param WebhookNotifier $webhookNotifier
      * @param LoggerInterface $logger
      */
@@ -62,12 +76,14 @@ class FetchRecorder
         ResourceConnection $resource,
         ChangelogReader $changelogReader,
         ResendProducts $resendProducts,
+        HeldProducts $heldProducts,
         WebhookNotifier $webhookNotifier,
         LoggerInterface $logger
     ) {
         $this->resource = $resource;
         $this->changelogReader = $changelogReader;
         $this->resendProducts = $resendProducts;
+        $this->heldProducts = $heldProducts;
         $this->webhookNotifier = $webhookNotifier;
         $this->logger = $logger;
     }
@@ -154,6 +170,12 @@ class FetchRecorder
                 $changed = $productIds === null
                     ? $this->changelogReader->getProductsChangedAfterInRange($cursor, $fromId, $toId)
                     : $this->changelogReader->getProductsChangedAfter($cursor, $productIds);
+                if ($this->holdingAvailable()) {
+                    $changed = array_values(array_unique(array_merge(
+                        $changed,
+                        $this->heldProducts->notSentAmong($storeId, $productIds, $fromId, $toId)
+                    )));
+                }
                 if (empty($changed)) {
                     continue;
                 }
@@ -170,5 +192,17 @@ class FetchRecorder
                 ]);
             }
         }
+    }
+
+    /**
+     * @return bool False until setup:upgrade has created the held products table
+     */
+    private function holdingAvailable(): bool
+    {
+        if ($this->holding === null) {
+            $this->holding = $this->heldProducts->isAvailable();
+        }
+
+        return $this->holding;
     }
 }
