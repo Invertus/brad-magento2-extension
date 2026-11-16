@@ -87,6 +87,8 @@ class SearchTermFilterTest extends TestCase
             'hyphenated category with brand' => ['zoliapjoves-vejapjoves/stiga'],
             'wp product code' => ['WP/8-3/H11'],
             'lowercase wp product code' => ['wp/12-3/h11'],
+            'bare WP search' => ['WP'],
+            'bare wordpress search' => ['wordpress'],
         ];
     }
 
