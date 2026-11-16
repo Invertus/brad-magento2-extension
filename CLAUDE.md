@@ -41,7 +41,7 @@ Deployment: `./deploy-bradsearch.sh` (use `--dry-run` first, `--compile` for DI 
 
 **Request flow**: GraphQL `products` query → `Products` plugin checks if operation is `ProductSearch` and BradSearch is enabled → `ProductsProvider` calls `Client` → `ResponseMapper` transforms API response to Magento GraphQL format.
 
-**Sync flow**: Cron runs every minute → reads `catalogsearch_fulltext_cl` changelog MAX version → compares with `bradsearch_sync_state` table → if behind, reads changed product IDs → `ChangeFilter` keeps only the products whose indexed data changed (a hash per product and store view, compared with `bradsearch_product_state`) → sends them by webhook to the BradSearch backend. Hashes are stored only after a 2xx. If the filter fails, every changelog product is sent and their stored hashes are deleted.
+**Sync flow**: Cron runs every minute → reads `catalogsearch_fulltext_cl` changelog MAX version → compares with `bradsearch_sync_state` table → if behind, reads changed product IDs → `ChangeFilter` keeps only the products whose indexed data changed (a hash per product and store view, compared with `bradsearch_product_state`) → sends them by webhook to the BradSearch backend. Hashes are stored only after a 2xx. If the filter fails, every changelog product is sent and their stored hashes are deleted. Each store view with sync on is hashed and sent on its own, so every store view a BradSearch application reads needs sync on.
 
 **Key files in SearchGraphQl**:
 - `Plugin/CatalogGraphQl/Model/Resolver/Products.php` - Main intercept point (decides BradSearch vs ElasticSuite)
