@@ -15,9 +15,9 @@ use Magento\Framework\DB\Sql\Expression;
  * Reads, for a batch of products, the catalog rows that decide what BradSearch indexes.
  *
  * Covers every table that feeds the catalogsearch_fulltext changelog and reaches the
- * bradProducts response: the entity row, indexed EAV values, categories, websites, configurable
- * children, bundle selections and catalog rule prices. Stock does not feed that changelog, but it
- * is read too, so a stock change still goes out with the next changelog entry for the product.
+ * bradProducts response: the entity row, indexed EAV values, categories, websites, stock,
+ * configurable children, bundle selections, grouped product links and catalog rule prices.
+ * Stock is read from the stock index, like bradProducts reads it.
  *
  * bradProducts reads categories from the scheduled category index, which can lag the assignment.
  * Both are read, so a product sent before that index caught up is sent again with its next
@@ -126,6 +126,7 @@ class ProductStateReader
             'stock' => $this->readStock($productIds),
             'children' => $this->readList('catalog_product_super_link', 'parent_id', 'product_id', $productIds),
             'bundle' => $this->readBundleSelections($productIds),
+            'grouped' => $this->readGroupedLinks($productIds),
             'rules' => $this->readRulePrices($productIds, $ruleDates),
             'specialDates' => $this->readSpecialPriceDates($productIds, $storeIds),
         ];
@@ -349,6 +350,36 @@ class ProductStateReader
         }
 
         return $selections;
+    }
+
+    /**
+     * The products a grouped product contains: its price is its cheapest child's.
+     *
+     * @param int[] $productIds
+     * @return array<int, string[]>
+     */
+    private function readGroupedLinks(array $productIds): array
+    {
+        if (!$this->exists('catalog_product_link') || !$this->exists('catalog_product_link_type')) {
+            return [];
+        }
+
+        $select = $this->connection()->select()
+            ->from(['link' => $this->table('catalog_product_link')], ['product_id', 'linked_product_id'])
+            ->joinInner(
+                ['type' => $this->table('catalog_product_link_type')],
+                'type.link_type_id = link.link_type_id',
+                []
+            )
+            ->where('type.code = ?', 'super')
+            ->where('link.product_id IN (?)', $productIds);
+
+        $links = [];
+        foreach ($this->connection()->fetchAll($select) as $row) {
+            $links[(int)$row['product_id']][] = (string)$row['linked_product_id'];
+        }
+
+        return $links;
     }
 
     /**

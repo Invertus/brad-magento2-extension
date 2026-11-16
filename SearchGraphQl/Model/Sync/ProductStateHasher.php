@@ -14,7 +14,7 @@ namespace BradSearch\SearchGraphQl\Model\Sync;
  */
 class ProductStateHasher
 {
-    private const LIST_PARTS = ['categories', 'websites', 'stock', 'children', 'bundle'];
+    private const LIST_PARTS = ['categories', 'websites', 'stock', 'children', 'bundle', 'grouped'];
 
     /**
      * Hash one product's indexed data as one store view sees it.
