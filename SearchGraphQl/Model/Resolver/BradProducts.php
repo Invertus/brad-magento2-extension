@@ -186,6 +186,7 @@ class BradProducts implements ResolverInterface
                 // sync reads skipped_count, so the product is accounted for rather than read as a
                 // hole in the enumeration.
                 $skipped++;
+                $this->fetchRecorder->recordFailure($storeId, (int)$entityId);
                 $this->logger->error('bradProducts: product left out of the page because it could not be built', [
                     'entity_id' => $entityId,
                     'store_id' => $storeId,

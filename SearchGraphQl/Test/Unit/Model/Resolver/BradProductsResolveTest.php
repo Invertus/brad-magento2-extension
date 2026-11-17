@@ -218,6 +218,7 @@ class BradProductsResolveTest extends TestCase
                 $this->callback(fn (array $context) => $context['entity_id'] === 12 && $context['error'] === 'no price for you')
             );
         $this->collectionYields([$good, $bad]);
+        $this->fetchRecorder->expects($this->once())->method('recordFailure')->with(1, 12);
 
         $result = $this->resolve();
 

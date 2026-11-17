@@ -6,6 +6,7 @@ declare(strict_types=1);
 
 namespace BradSearch\SearchGraphQl\Test\Unit\Model\Sync;
 
+use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
@@ -35,6 +36,9 @@ class FetchRecorderTest extends TestCase
     /** @var HeldProducts&MockObject */
     private $heldProducts;
 
+    /** @var ChangeFilter&MockObject */
+    private $changeFilter;
+
     protected function setUp(): void
     {
         $this->connection = $this->createMock(AdapterInterface::class);
@@ -49,6 +53,7 @@ class FetchRecorderTest extends TestCase
         $this->heldProducts = $this->createMock(HeldProducts::class);
         $this->heldProducts->method('isAvailable')->willReturn(true);
         $this->heldProducts->method('notSentAmong')->willReturn([]);
+        $this->changeFilter = $this->createMock(ChangeFilter::class);
     }
 
     public function testTheCursorIsTheStoresSyncState(): void
@@ -146,6 +151,33 @@ class FetchRecorderTest extends TestCase
         $recorder->flush();
     }
 
+    public function testAProductThatCouldNotBeBuiltHasItsHashForgottenNotAMark(): void
+    {
+        // Its next changelog entry sends it again. A mark would send a product that keeps failing every run.
+        $this->changeFilter->expects($this->exactly(2))->method('forget')
+            ->withConsecutive([[12, 13], 1], [[40], 2]);
+        $this->resendProducts->expects($this->never())->method('mark');
+
+        $recorder = $this->recorder();
+        $recorder->recordFailure(1, 12);
+        $recorder->recordFailure(1, 13);
+        $recorder->recordFailure(2, 40);
+        $recorder->flush();
+        $recorder->flush();
+    }
+
+    public function testAFailedForgetDoesNotStopTheMarks(): void
+    {
+        $this->changeFilter->method('forget')->willThrowException(new \RuntimeException('db gone'));
+        $this->changelogReader->method('getProductsChangedAfter')->willReturn([11]);
+        $this->resendProducts->expects($this->once())->method('mark')->with(1, [11]);
+
+        $recorder = $this->recorder();
+        $recorder->recordFailure(1, 12);
+        $recorder->record(1, 400, [11, 12]);
+        $recorder->flush();
+    }
+
     public function testNothingChangedMarksNothing(): void
     {
         $this->changelogReader->method('getProductsChangedAfter')->willReturn([]);
@@ -195,6 +227,7 @@ class FetchRecorderTest extends TestCase
             $this->changelogReader,
             $this->resendProducts,
             $this->heldProducts,
+            $this->changeFilter,
             $this->notifier,
             new NullLogger()
         );
