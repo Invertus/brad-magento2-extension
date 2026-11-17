@@ -57,6 +57,8 @@ class SearchTermFilterTest extends TestCase
             'aws credentials probe' => ['.aws/credentials'],
             'laravel log probe' => ['storage/logs/laravel.log'],
             'site root probe' => ['site/'],
+            'telescope probe' => ['telescope/requests'],
+            'nested telescope probe' => ['vendor/telescope/'],
         ];
     }
 
@@ -89,6 +91,8 @@ class SearchTermFilterTest extends TestCase
             'lowercase wp product code' => ['wp/12-3/h11'],
             'bare WP search' => ['WP'],
             'bare wordpress search' => ['wordpress'],
+            'bare telescope search' => ['telescope'],
+            'capitalised telescope search' => ['Telescope'],
         ];
     }
 
