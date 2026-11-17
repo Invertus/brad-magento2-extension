@@ -15,6 +15,10 @@ use Psr\Log\LoggerInterface;
  * The store's sync cursor is read before any product data, and the changelog after the whole request
  * has read its data. Any change BradSearch may have read in a state the stored hash does not describe
  * is then in the changelog after that cursor, so the product is marked to be sent again.
+ *
+ * A product the request could not build did not reach BradSearch, so its stored hash is forgotten and
+ * its next changelog entry sends it again. It is not marked: a product that keeps failing would then
+ * be sent on every run.
  */
 class FetchRecorder
 {
@@ -25,6 +29,11 @@ class FetchRecorder
      *      (null for an id range), first id, last id (null: no end)
      */
     private array $fetches = [];
+
+    /**
+     * @var array<int, int[]> store id => products the request could not build
+     */
+    private array $failures = [];
 
     /**
      * @var ResourceConnection
@@ -42,6 +51,11 @@ class FetchRecorder
     private ResendProducts $resendProducts;
 
     /**
+     * @var ChangeFilter
+     */
+    private ChangeFilter $changeFilter;
+
+    /**
      * @var WebhookNotifier
      */
     private WebhookNotifier $webhookNotifier;
@@ -55,6 +69,7 @@ class FetchRecorder
      * @param ResourceConnection $resource
      * @param ChangelogReader $changelogReader
      * @param ResendProducts $resendProducts
+     * @param ChangeFilter $changeFilter
      * @param WebhookNotifier $webhookNotifier
      * @param LoggerInterface $logger
      */
@@ -62,12 +77,14 @@ class FetchRecorder
         ResourceConnection $resource,
         ChangelogReader $changelogReader,
         ResendProducts $resendProducts,
+        ChangeFilter $changeFilter,
         WebhookNotifier $webhookNotifier,
         LoggerInterface $logger
     ) {
         $this->resource = $resource;
         $this->changelogReader = $changelogReader;
         $this->resendProducts = $resendProducts;
+        $this->changeFilter = $changeFilter;
         $this->webhookNotifier = $webhookNotifier;
         $this->logger = $logger;
     }
@@ -140,6 +157,18 @@ class FetchRecorder
     }
 
     /**
+     * A product left out of the response because it could not be built
+     *
+     * @param int $storeId
+     * @param int $productId
+     * @return void
+     */
+    public function recordFailure(int $storeId, int $productId): void
+    {
+        $this->failures[$storeId][] = $productId;
+    }
+
+    /**
      * Run once the request has read everything it returns
      *
      * @return void
@@ -147,7 +176,24 @@ class FetchRecorder
     public function flush(): void
     {
         $fetches = $this->fetches;
+        $failures = $this->failures;
         $this->fetches = [];
+        $this->failures = [];
+
+        foreach ($failures as $storeId => $productIds) {
+            try {
+                $this->changeFilter->forget($productIds, $storeId);
+                $this->logger->info('BradSearch Sync: Fetched products could not be built, their next change is sent', [
+                    'store_id' => $storeId,
+                    'product_count' => count(array_unique($productIds))
+                ]);
+            } catch (\Throwable $e) {
+                $this->logger->error('BradSearch Sync: Could not forget the hashes of products that could not be built', [
+                    'store_id' => $storeId,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
 
         foreach ($fetches as [$storeId, $cursor, $productIds, $fromId, $toId]) {
             try {
