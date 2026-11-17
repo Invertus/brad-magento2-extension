@@ -34,8 +34,6 @@ class IndexState
         self::STOCK => ['cataloginventory_stock'],
     ];
 
-    private const BATCH_SIZE = 1000;
-
     /**
      * @var ResourceConnection
      */
@@ -100,18 +98,18 @@ class IndexState
             return $productIds;
         }
 
-        $waiting = [];
-        foreach (array_chunk($productIds, self::BATCH_SIZE) as $batch) {
-            $waiting[] = $connection->fetchCol(
-                $connection->select()
-                    ->distinct(true)
-                    ->from($changelog, ['entity_id'])
-                    ->where('entity_id IN (?)', $batch)
-                    ->where('version_id > ?', (int)$state['version_id'])
-            );
-        }
+        // Changelog tables have no index on entity_id, so filtering by the products would scan the whole
+        // backlog once per batch of ids. The backlog is read once and matched here instead.
+        $pending = array_fill_keys(array_map('intval', $connection->fetchCol(
+            $connection->select()
+                ->distinct(true)
+                ->from($changelog, ['entity_id'])
+                ->where('version_id > ?', (int)$state['version_id'])
+        )), true);
 
-        return array_values(array_unique(array_map('intval', array_merge([], ...$waiting))));
+        return array_values(array_filter($productIds, static function (int $productId) use ($pending): bool {
+            return isset($pending[$productId]);
+        }));
     }
 
     /**

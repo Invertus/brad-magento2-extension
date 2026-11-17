@@ -52,11 +52,14 @@ class IndexStateTest extends TestCase
     public function testProductsWithChangelogRowsAfterTheIndexedVersionAreWaiting(): void
     {
         $this->connection->method('fetchRow')->willReturn(['mode' => 'enabled', 'status' => 'idle', 'version_id' => '700']);
-        $this->connection->expects($this->once())->method('fetchCol')->willReturn(['11']);
+        // The backlog also has products this run does not send (14): only the asked ones come back.
+        $this->connection->expects($this->once())->method('fetchCol')->willReturn(['11', '14', '11']);
 
         $this->assertSame([11], $this->state()->notIndexed(IndexState::CATEGORIES, [10, 11, 12]));
         $this->assertContains(['version_id > ?', 700], $this->wheres);
-        $this->assertContains(['entity_id IN (?)', [10, 11, 12]], $this->wheres);
+        $this->assertSame([], array_filter($this->wheres, static function (array $where): bool {
+            return strpos($where[0], 'entity_id') !== false;
+        }), 'changelog tables have no entity_id index');
         $this->assertContains('catalog_product_category_cl', $this->froms);
     }
 
@@ -146,12 +149,12 @@ class IndexStateTest extends TestCase
         $this->assertSame([], $this->state()->notIndexed(IndexState::CATEGORIES, []));
     }
 
-    public function testLargeListsAreReadInBatches(): void
+    public function testTheBacklogIsReadOnceForAnyNumberOfProducts(): void
     {
         $this->connection->method('fetchRow')->willReturn(['mode' => 'enabled', 'status' => 'idle', 'version_id' => '1']);
-        $this->connection->expects($this->exactly(3))->method('fetchCol')->willReturn([]);
+        $this->connection->expects($this->once())->method('fetchCol')->willReturn(['2400', '9000']);
 
-        $this->assertSame([], $this->state()->notIndexed(IndexState::CATEGORIES, range(1, 2500)));
+        $this->assertSame([2400], $this->state()->notIndexed(IndexState::CATEGORIES, range(1, 2500)));
     }
 
     public function testWebsitesWithActivePriceRules(): void
