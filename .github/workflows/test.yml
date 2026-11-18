@@ -54,3 +54,14 @@ jobs:
 
       - name: Run unit tests
         run: vendor/bin/phpunit
+
+      # brad-app's Magento adapter tests read the same fixtures from the SDK; a difference means
+      # one side changed the contract without the other.
+      - name: Contract fixtures match the SDK
+        env:
+          SDK_CONTRACT_REF: main
+        run: |
+          for file in products health; do
+            curl -fsSL "https://raw.githubusercontent.com/Invertus/brad-search-php-sdk/${SDK_CONTRACT_REF}/tests/fixtures/platform-contracts/magento/${file}.json" -o "/tmp/sdk-${file}.json"
+            diff -u "/tmp/sdk-${file}.json" "SearchGraphQl/Test/Unit/_files/contract/${file}.json"
+          done

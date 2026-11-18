@@ -1,0 +1,147 @@
+{
+  "data": {
+    "bradProducts": {
+      "total_count": 2,
+      "skipped_count": 0,
+      "page_info": {
+        "current_page": 0,
+        "page_size": 2,
+        "total_pages": 1
+      },
+      "items": [
+        {
+          "id": 101,
+          "sku": "MB-101",
+          "name": "Cordless Drill 18V",
+          "full_url": "https://magento.example.com/cordless-drill-18v.html",
+          "is_in_stock": true,
+          "allows_backorders": false,
+          "short_description": {
+            "html": "<p>Compact cordless drill.</p>"
+          },
+          "description": {
+            "html": "<p>Compact cordless drill with two batteries and a case.</p>"
+          },
+          "attributes": [
+            {
+              "attribute_id": 83,
+              "code": "manufacturer",
+              "label": "Manufacturer",
+              "value": "Bosch",
+              "formatted": "Bosch",
+              "position": 1,
+              "is_searchable": true,
+              "is_filterable": true,
+              "is_visible": true,
+              "unit": null,
+              "numeric_value": null,
+              "has_unit": false
+            },
+            {
+              "attribute_id": 142,
+              "code": "voltage",
+              "label": "Voltage",
+              "value": "18 V",
+              "formatted": "18 V",
+              "position": 2,
+              "is_searchable": false,
+              "is_filterable": true,
+              "is_visible": true,
+              "unit": "V",
+              "numeric_value": 18.0,
+              "has_unit": true
+            }
+          ],
+          "image_optimized": "https://magento.example.com/media/catalog/product/m/b/mb-101.jpg?auto=webp&format=pjpg&width=840&height=375&fit=cover",
+          "calculated_price": {
+            "minimum_price": {
+              "regular_price": {
+                "value": 149.99,
+                "currency": "EUR"
+              },
+              "final_price": {
+                "value": 119.99,
+                "currency": "EUR"
+              },
+              "final_price_excl_tax": {
+                "value": 99.17,
+                "currency": "EUR"
+              }
+            }
+          },
+          "categories": [
+            {
+              "id": 3,
+              "name": "Power Tools",
+              "url_path": "power-tools",
+              "level": 2,
+              "path": "1/2/3"
+            }
+          ],
+          "stock_status": "IN_STOCK",
+          "sort_popularity": "I123INUL",
+          "sort_popularity_sales": 123
+        },
+        {
+          "id": 102,
+          "sku": "MB-102",
+          "name": "Work Jacket",
+          "full_url": "https://magento.example.com/work-jacket.html",
+          "is_in_stock": true,
+          "allows_backorders": false,
+          "short_description": {
+            "html": "<p>Water resistant work jacket.</p>"
+          },
+          "description": {
+            "html": ""
+          },
+          "attributes": [
+            {
+              "attribute_id": 93,
+              "code": "color",
+              "label": "Color",
+              "value": "Blue",
+              "formatted": "Blue",
+              "position": 3,
+              "is_searchable": true,
+              "is_filterable": true,
+              "is_visible": true,
+              "unit": null,
+              "numeric_value": null,
+              "has_unit": false
+            }
+          ],
+          "image_optimized": "https://magento.example.com/media/catalog/product/m/b/mb-102.jpg?auto=webp&format=pjpg&width=840&height=375&fit=cover",
+          "calculated_price": {
+            "minimum_price": {
+              "regular_price": {
+                "value": 59.0,
+                "currency": "EUR"
+              },
+              "final_price": {
+                "value": 59.0,
+                "currency": "EUR"
+              },
+              "final_price_excl_tax": {
+                "value": 48.76,
+                "currency": "EUR"
+              }
+            }
+          },
+          "categories": [
+            {
+              "id": 4,
+              "name": "Workwear",
+              "url_path": "workwear",
+              "level": 2,
+              "path": "1/2/4"
+            }
+          ],
+          "stock_status": "IN_STOCK",
+          "sort_popularity": "I456INUL",
+          "sort_popularity_sales": 456
+        }
+      ]
+    }
+  }
+}
