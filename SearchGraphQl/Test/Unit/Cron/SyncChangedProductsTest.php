@@ -384,10 +384,7 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => [[10, 11, 12, 20], []]], $this->heldUpdates);
-        $this->assertSame(
-            [[IndexState::CATEGORIES, [10, 11, 12, 20]], [IndexState::STOCK, [10, 11, 12, 20]]],
-            $this->indexChecks
-        );
+        $this->assertSame([[IndexState::CATEGORIES, [10, 11, 12, 20]]], $this->indexChecks);
     }
 
     public function testAHeldProductIsSentWhenNothingNewIsInTheChangelog(): void
@@ -597,10 +594,10 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([1 => [[10, 11, 12], []], 9 => [[10, 12], [11]]], $this->heldUpdates);
     }
 
-    public function testAStockChangeWaitsForTheStockIndex(): void
+    public function testWithoutTheStockStatusTableAStockChangeWaitsForTheStockIndex(): void
     {
-        // With Magento's inventory modules too: an import can write the stock item, which adds the row,
-        // before the status bradProducts reads.
+        // Without the status compare nothing would see a status written after the stock item's row.
+        $this->snapshotMissing();
         $this->notIndexed[IndexState::STOCK] = [11];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]])
             ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
@@ -617,7 +614,63 @@ class SyncChangedProductsTest extends TestCase
 
         $this->cron([1])->execute();
 
-        $this->assertSame([IndexState::CATEGORIES, IndexState::STOCK], array_column($this->indexChecks, 0));
+        $this->assertSame([IndexState::CATEGORIES], array_column($this->indexChecks, 0));
+    }
+
+    public function testWithTheStockStatusCompareNothingWaitsForTheStockIndex(): void
+    {
+        // The compare finds the stock index's own writes, so waiting for it would only delay the flip.
+        $this->notIndexed[IndexState::STOCK] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertNotContains(IndexState::STOCK, array_column($this->indexChecks, 0));
+        $this->assertSame([1 => [[10, 11, 12], []]], $this->heldUpdates);
+    }
+
+    public function testAFailedStockStatusCompareFallsBackToWaitingForTheStockIndex(): void
+    {
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->method('changes')->willThrowException(new \RuntimeException('db gone'));
+        $this->notIndexed[IndexState::STOCK] = [11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[10, 12], [11]]], $this->heldUpdates);
+    }
+
+    public function testAStatusChangeOnAProductSentAtTheLimitIsSentAgain(): void
+    {
+        // Product 20 waits for the category index and was sent at the hold limit; its status then changed
+        // with no changelog row (an order, or an import writing only the status).
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [20 => true];
+        $this->notIndexed[IndexState::CATEGORIES] = [20];
+        $this->statusChanges = [['product_id' => 20, 'website_id' => 0, 'stock_status' => 0]];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]], [1 => []])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([20], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([20 => true], $this->held[1], 'still held until the category index has it');
+    }
+
+    public function testAProductSentAtTheLimitWithNoNewChangeIsNotSentAgain(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->held[1] = [20 => true];
+        $this->notIndexed[IndexState::CATEGORIES] = [20];
+        $this->changeFilter->expects($this->never())->method('filter');
+        $this->notifier->expects($this->never())->method('notify');
+
+        $this->cron([1])->execute();
     }
 
     public function testStockChangelogProductsAreCheckedWithTheOthersAndBothCursorsMove(): void
@@ -850,8 +903,9 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
     }
 
-    public function testAParentWaitsWhileAChildIsNotStockIndexed(): void
+    public function testWithoutTheStockStatusTableAParentWaitsWhileAChildIsNotStockIndexed(): void
     {
+        $this->snapshotMissing();
         $this->parents = [90 => [72]];
         $this->changelogIds = [90];
         $this->children = [72 => [90, 91]];
@@ -875,6 +929,12 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
+    private function snapshotMissing(): void
+    {
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(false);
     }
 
     /**

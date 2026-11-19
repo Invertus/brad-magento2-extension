@@ -114,6 +114,16 @@ class SyncChangedProducts
     private ?int $currentStockVersion = null;
 
     /**
+     * @var bool Whether this run compares stock statuses with the ones last seen
+     */
+    private bool $comparingStockStatus = false;
+
+    /**
+     * @var array<int, true> Products whose stock status changed since the last run
+     */
+    private array $stockStatusChanged = [];
+
+    /**
      * @param ChangelogReader $changelogReader
      * @param WebhookNotifier $webhookNotifier
      * @param SyncStateFactory $syncStateFactory
@@ -409,6 +419,8 @@ class SyncChangedProducts
      */
     private function noteStockStatusChanges(array $storeIds): void
     {
+        $this->comparingStockStatus = false;
+        $this->stockStatusChanged = [];
         if (!$this->holding || empty($storeIds)) {
             return;
         }
@@ -420,8 +432,10 @@ class SyncChangedProducts
                 );
                 return;
             }
-
             $rows = $this->stockStatusSnapshot->changes();
+            // The statuses read are saved only once their products are held, so a run that fails from here on
+            // finds the same changes next run.
+            $this->comparingStockStatus = true;
             if (empty($rows)) {
                 return;
             }
@@ -431,6 +445,7 @@ class SyncChangedProducts
                 $this->heldProducts->update($storeId, [], $productIds);
             }
             $this->stockStatusSnapshot->save($rows);
+            $this->stockStatusChanged = array_fill_keys($productIds, true);
 
             $this->logger->info('BradSearch Sync: Stock status changed, checking the products', [
                 'product_count' => count($productIds)
@@ -531,7 +546,9 @@ class SyncChangedProducts
 
         try {
             $categories = array_fill_keys($this->indexState->notIndexed(IndexState::CATEGORIES, $all), true);
-            $stock = $this->waitingForStock($all);
+            // The status compare catches the stock index's own writes (a status written after the stock item, a
+            // parent's status written when a child is indexed), so the stock index is waited for only without it.
+            $stock = $this->comparingStockStatus ? [] : $this->waitingForStock($all);
             $ruleWebsites = array_fill_keys($this->indexState->websitesWithPriceRules(), true);
             $rules = empty($ruleWebsites)
                 ? []
@@ -610,7 +627,9 @@ class SyncChangedProducts
     private function plan(int $storeId, array $changes, array $waiting): array
     {
         [, $productIds, $changelogIds, $held, $resend] = $changes;
-        $changed = array_flip($changelogIds) + $resend;
+        // A held product sent at the limit is sent again only for a new change: a changelog row, a mark or a stock
+        // status that changed with no row.
+        $changed = array_flip($changelogIds) + $resend + $this->stockStatusChanged;
         $overdue = array_flip($this->overdue($storeId, $waiting, $held));
 
         $plan = ['send' => [], 'forced' => [], 'hold' => [], 'release' => [], 'sentAtLimit' => [], 'resend' => $resend];

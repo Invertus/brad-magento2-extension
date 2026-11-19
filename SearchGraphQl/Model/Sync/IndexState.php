@@ -16,9 +16,9 @@ use Magento\Framework\App\ResourceConnection;
  * index job, so a product sent before the index job runs is fetched with its old data, and nothing sends
  * it again.
  *
- * The stock status is waited for with Magento's inventory modules too: a stock save or import can write
- * the stock item (which adds the changelog row) before the status, and the stock index writes a
- * bundle's or configurable's status when it indexes a child's row.
+ * The sync waits for the stock index only when it cannot compare stock statuses with the ones it last saw
+ * (`StockStatusSnapshot`): that compare finds a status written after the stock item, and a bundle's or
+ * configurable's status the stock index writes when it indexes a child's row.
  */
 class IndexState
 {
