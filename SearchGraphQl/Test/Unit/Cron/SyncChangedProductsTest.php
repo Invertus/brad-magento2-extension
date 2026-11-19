@@ -778,6 +778,19 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([], $this->held[1]);
     }
 
+    public function testAProductWhoseStatusRowIsGoneIsHeldAndChecked(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->statusChanges = [['product_id' => 20, 'website_id' => 0, 'stock_status' => null]];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]], [1 => []])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->method('notify')->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame(['held 1 /20', 'save 20', 'held 1 20/'], $this->calls);
+    }
+
     public function testEveryStoreHoldsTheStatusChangesBeforeTheSnapshotIsSaved(): void
     {
         $this->lastVersion = self::CURRENT_VERSION;

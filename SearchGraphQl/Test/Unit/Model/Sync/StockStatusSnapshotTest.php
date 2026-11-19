@@ -54,9 +54,10 @@ class StockStatusSnapshotTest extends TestCase
     {
         $this->connection->method('fetchOne')->willReturn('5');
         $this->connection->expects($this->never())->method('insertFromSelect');
-        $this->connection->method('fetchAll')->willReturn([
-            ['product_id' => '72249', 'website_id' => '0', 'stock_status' => '1'],
-        ]);
+        $this->connection->method('fetchAll')->willReturnOnConsecutiveCalls(
+            [['product_id' => '72249', 'website_id' => '0', 'stock_status' => '1']],
+            []
+        );
 
         $this->assertSame(
             [['product_id' => 72249, 'website_id' => 0, 'stock_status' => 1]],
@@ -64,6 +65,35 @@ class StockStatusSnapshotTest extends TestCase
         );
         $this->assertContains(['s.stock_id = ?', 1], $this->wheres);
         $this->assertContains(['n.product_id IS NULL OR n.stock_status <> s.stock_status', null], $this->wheres);
+    }
+
+    public function testARowGoneFromMagentosTableIsAChangeWithNoStatus(): void
+    {
+        // The stock index deletes a disabled product's row and writes it again once the product is enabled.
+        $this->connection->method('fetchOne')->willReturn('5');
+        $this->connection->method('fetchAll')->willReturnOnConsecutiveCalls(
+            [],
+            [['product_id' => '60249', 'website_id' => '0']]
+        );
+
+        $this->assertSame(
+            [['product_id' => 60249, 'website_id' => 0, 'stock_status' => null]],
+            $this->snapshot()->changes()
+        );
+        $this->assertContains(['s.product_id IS NULL', null], $this->wheres);
+    }
+
+    public function testSaveRemovesTheRowsWithNoStatus(): void
+    {
+        $this->connection->expects($this->once())->method('insertOnDuplicate')
+            ->with('bradsearch_stock_status', [['product_id' => 7, 'website_id' => 0, 'stock_status' => 1]], ['stock_status']);
+        $this->connection->expects($this->once())->method('delete')
+            ->with('bradsearch_stock_status', ['website_id = ?' => 0, 'product_id IN (?)' => [60249]]);
+
+        $this->snapshot()->save([
+            ['product_id' => 7, 'website_id' => 0, 'stock_status' => 1],
+            ['product_id' => 60249, 'website_id' => 0, 'stock_status' => null],
+        ]);
     }
 
     public function testSaveWritesTheValuesItIsGivenInBatches(): void
@@ -83,8 +113,8 @@ class StockStatusSnapshotTest extends TestCase
         $this->connection->method('fetchCol')->willReturn(['12']);
 
         $this->assertSame([12], $this->snapshot()->changedAmong([11, 12, 11]));
-        $this->assertContains(['s.product_id IN (?)', [11, 12]], $this->wheres);
-        $this->assertContains(['n.stock_status <> s.stock_status', null], $this->wheres);
+        $this->assertContains(['n.product_id IN (?)', [11, 12]], $this->wheres);
+        $this->assertContains(['s.product_id IS NULL OR n.stock_status <> s.stock_status', null], $this->wheres);
     }
 
     public function testChangedAmongAnIdRange(): void
@@ -92,8 +122,8 @@ class StockStatusSnapshotTest extends TestCase
         $this->connection->method('fetchCol')->willReturn(['50']);
 
         $this->assertSame([50], $this->snapshot()->changedAmong(null, 4, 90));
-        $this->assertContains(['s.product_id >= ?', 4], $this->wheres);
-        $this->assertContains(['s.product_id <= ?', 90], $this->wheres);
+        $this->assertContains(['n.product_id >= ?', 4], $this->wheres);
+        $this->assertContains(['n.product_id <= ?', 90], $this->wheres);
     }
 
     private function snapshot(): StockStatusSnapshot

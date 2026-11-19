@@ -51,11 +51,14 @@ class StockStatusSnapshot
     }
 
     /**
-     * Rows whose status differs from the copy, or that the copy does not have yet. An empty copy is filled
+     * Rows whose status differs from the copy, that the copy does not have yet, or that are gone from
+     * Magento's table (stock_status null). The stock index deletes a disabled product's row and writes it
+     * again once the product is enabled; a copy row kept meanwhile would match the new row and hide it,
+     * while BradSearch may have read the product with no row (out of stock). An empty copy is filled
      * instead, and nothing is returned: every product would differ, and the stored hashes already describe
      * what BradSearch has.
      *
-     * @return array<int, array{product_id: int, website_id: int, stock_status: int}>
+     * @return array<int, array{product_id: int, website_id: int, stock_status: int|null}>
      */
     public function changes(): array
     {
@@ -93,6 +96,23 @@ class StockStatusSnapshot
                 'stock_status' => (int)$row['stock_status'],
             ];
         }
+        foreach ($connection->fetchAll(
+            $connection->select()
+                ->from(['n' => $table], ['product_id', 'website_id'])
+                ->joinLeft(
+                    ['s' => $source],
+                    'n.product_id = s.product_id AND n.website_id = s.website_id AND s.stock_id = '
+                    . self::DEFAULT_STOCK,
+                    []
+                )
+                ->where('s.product_id IS NULL')
+        ) as $row) {
+            $rows[] = [
+                'product_id' => (int)$row['product_id'],
+                'website_id' => (int)$row['website_id'],
+                'stock_status' => null,
+            ];
+        }
 
         return $rows;
     }
@@ -101,21 +121,37 @@ class StockStatusSnapshot
      * Store the rows changes() returned, with the values it read: a status written since then still
      * differs on the next run.
      *
-     * @param array<int, array{product_id: int, website_id: int, stock_status: int}> $rows
+     * @param array<int, array{product_id: int, website_id: int, stock_status: int|null}> $rows A null status
+     *        removes the row
      * @return void
      */
     public function save(array $rows): void
     {
         $connection = $this->resource->getConnection();
         $table = $this->resource->getTableName(self::TABLE);
-        foreach (array_chunk($rows, self::BATCH_SIZE) as $batch) {
+
+        $present = [];
+        $gone = [];
+        foreach ($rows as $row) {
+            if ($row['stock_status'] === null) {
+                $gone[$row['website_id']][] = $row['product_id'];
+            } else {
+                $present[] = $row;
+            }
+        }
+        foreach (array_chunk($present, self::BATCH_SIZE) as $batch) {
             $connection->insertOnDuplicate($table, $batch, ['stock_status']);
+        }
+        foreach ($gone as $websiteId => $productIds) {
+            foreach (array_chunk($productIds, self::BATCH_SIZE) as $batch) {
+                $connection->delete($table, ['website_id = ?' => $websiteId, 'product_id IN (?)' => $batch]);
+            }
         }
     }
 
     /**
-     * Products whose status differs from the copy. A product the copy does not have is not counted: the
-     * sync has not seen it yet, so no stored hash relies on it.
+     * Products whose status differs from the copy, or whose row is gone from Magento's table. A product the
+     * copy does not have is not counted: the sync has not seen it yet, so no stored hash relies on it.
      *
      * @param int[]|null $productIds Null for every product in the id range
      * @param int $fromId
@@ -127,19 +163,19 @@ class StockStatusSnapshot
         $connection = $this->resource->getConnection();
         $select = $connection->select()
             ->distinct(true)
-            ->from(['s' => $this->resource->getTableName(self::SOURCE)], ['product_id'])
-            ->joinInner(
-                ['n' => $this->resource->getTableName(self::TABLE)],
-                'n.product_id = s.product_id AND n.website_id = s.website_id',
+            ->from(['n' => $this->resource->getTableName(self::TABLE)], ['product_id'])
+            ->joinLeft(
+                ['s' => $this->resource->getTableName(self::SOURCE)],
+                'n.product_id = s.product_id AND n.website_id = s.website_id AND s.stock_id = '
+                . self::DEFAULT_STOCK,
                 []
             )
-            ->where('s.stock_id = ?', self::DEFAULT_STOCK)
-            ->where('n.stock_status <> s.stock_status');
+            ->where('s.product_id IS NULL OR n.stock_status <> s.stock_status');
 
         if ($productIds === null) {
-            $select->where('s.product_id >= ?', $fromId);
+            $select->where('n.product_id >= ?', $fromId);
             if ($toId !== null) {
-                $select->where('s.product_id <= ?', $toId);
+                $select->where('n.product_id <= ?', $toId);
             }
             return array_map('intval', $connection->fetchCol($select));
         }
@@ -147,7 +183,7 @@ class StockStatusSnapshot
         $changed = [];
         foreach (array_chunk(array_values(array_unique(array_map('intval', $productIds))), self::BATCH_SIZE) as $batch) {
             $batchSelect = clone $select;
-            $changed[] = $connection->fetchCol($batchSelect->where('s.product_id IN (?)', $batch));
+            $changed[] = $connection->fetchCol($batchSelect->where('n.product_id IN (?)', $batch));
         }
 
         return array_map('intval', array_merge([], ...$changed));
