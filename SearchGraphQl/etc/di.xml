@@ -52,6 +52,7 @@
     <type name="BradSearch\SearchGraphQl\Cron\SyncChangedProducts">
         <arguments>
             <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+            <argument name="stockChangelogReader" xsi:type="object">BradSearch\SearchGraphQl\Model\Sync\StockChangelogReader</argument>
         </arguments>
     </type>
 
@@ -61,7 +62,29 @@
         </arguments>
     </type>
 
+    <!-- Stock item writes reach catalogsearch_fulltext_cl only through a trigger built after Magento
+         subscribed the search view to the stock table; this changelog has them either way. -->
+    <virtualType name="BradSearch\SearchGraphQl\Model\Sync\StockChangelogReader"
+                 type="BradSearch\SearchGraphQl\Model\Sync\ChangelogReader">
+        <arguments>
+            <argument name="changelogTable" xsi:type="string">cataloginventory_stock_cl</argument>
+        </arguments>
+    </virtualType>
+
     <type name="BradSearch\SearchGraphQl\Model\Sync\FetchRecorder">
+        <arguments>
+            <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
+            <argument name="stockChangelogReader" xsi:type="object">BradSearch\SearchGraphQl\Model\Sync\StockChangelogReader</argument>
+        </arguments>
+    </type>
+
+    <!-- An order's stock status change has no changelog row; Magento's inventory modules may be missing. -->
+    <type name="Magento\InventoryIndexer\Model\Queue\UpdateIndexSalabilityStatus">
+        <plugin name="bradsearch_mark_salability_changes"
+                type="BradSearch\SearchGraphQl\Plugin\InventoryIndexer\MarkSalabilityChanges"/>
+    </type>
+
+    <type name="BradSearch\SearchGraphQl\Plugin\InventoryIndexer\MarkSalabilityChanges">
         <arguments>
             <argument name="logger" xsi:type="object">BradSearch\SearchGraphQl\Model\Logger\DebugLogger</argument>
         </arguments>

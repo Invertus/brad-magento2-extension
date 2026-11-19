@@ -14,6 +14,7 @@ use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\IndexState;
+use BradSearch\SearchGraphQl\Model\Sync\ProductRelations;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\Store;
@@ -71,7 +72,28 @@ class SyncChangedProductsTest extends TestCase
     /** @var int[] Websites with an active catalog price rule */
     private array $ruleWebsites = [];
 
-    private bool $stockWaits = false;
+    /** @var ChangelogReader&MockObject */
+    private $stockChangelogReader;
+
+    /** @var int|null The stock cursor every store starts the run with; null before its first read */
+    private ?int $lastStockVersion = 80;
+
+    /** @var int[] What the stock changelog returns for versions 80..90 */
+    private array $stockIds = [];
+
+    /** @var array<int, int> store id => saved stock cursor */
+    private array $savedStockVersions = [];
+
+    private bool $stockCursorColumn = true;
+
+    /** @var array<int, int[]> child => parents */
+    private array $parents = [];
+
+    /** @var array<int, int[]> parent => children */
+    private array $children = [];
+
+    /** @var ProductRelations&MockObject */
+    private $relations;
 
     /** @var array<int, int> store id => website id (default 1) */
     private array $websites = [];
@@ -104,7 +126,29 @@ class SyncChangedProductsTest extends TestCase
         $this->syncStateResource = $this->createMock(SyncStateResource::class);
         $this->syncStateResource->method('save')->willReturnCallback(function (SyncState $state) {
             $this->savedVersions[$state->getStoreId()] = $state->getLastVersionId();
+            if ($state->getLastStockVersionId() !== null) {
+                $this->savedStockVersions[$state->getStoreId()] = $state->getLastStockVersionId();
+            }
             return $this->syncStateResource;
+        });
+        $this->syncStateResource->method('hasStockCursor')->willReturnCallback(function (): bool {
+            return $this->stockCursorColumn;
+        });
+
+        $this->stockChangelogReader = $this->createMock(ChangelogReader::class);
+        $this->stockChangelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->stockChangelogReader->method('getCurrentVersion')->willReturn(90);
+        $this->stockChangelogReader->method('getChangedProductIds')->with(80, 90)
+            ->willReturnCallback(function (): array {
+                return $this->stockIds;
+            });
+
+        $this->relations = $this->createMock(ProductRelations::class);
+        $this->relations->method('parentsOf')->willReturnCallback(function (array $ids): array {
+            return array_intersect_key($this->parents, array_flip($ids));
+        });
+        $this->relations->method('childrenOf')->willReturnCallback(function (array $ids): array {
+            return array_intersect_key($this->children, array_flip($ids));
         });
 
         $this->changeFilter = $this->createMock(ChangeFilter::class);
@@ -118,9 +162,6 @@ class SyncChangedProductsTest extends TestCase
         );
         $this->indexState->method('websitesWithPriceRules')->willReturnCallback(function (): array {
             return $this->ruleWebsites;
-        });
-        $this->indexState->method('stockWaitsForIndex')->willReturnCallback(function (): bool {
-            return $this->stockWaits;
         });
 
         $this->heldProducts = $this->heldProductsMock(true);
@@ -322,7 +363,10 @@ class SyncChangedProductsTest extends TestCase
         $this->cron([1])->execute();
 
         $this->assertSame([1 => [[10, 11, 12, 20], []]], $this->heldUpdates);
-        $this->assertSame([[IndexState::CATEGORIES, [10, 11, 12, 20]]], $this->indexChecks);
+        $this->assertSame(
+            [[IndexState::CATEGORIES, [10, 11, 12, 20]], [IndexState::STOCK, [10, 11, 12, 20]]],
+            $this->indexChecks
+        );
     }
 
     public function testAHeldProductIsSentWhenNothingNewIsInTheChangelog(): void
@@ -532,9 +576,10 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([1 => [[10, 11, 12], []], 9 => [[10, 12], [11]]], $this->heldUpdates);
     }
 
-    public function testWithoutTheInventoryModulesAStockChangeWaitsForTheStockIndex(): void
+    public function testAStockChangeWaitsForTheStockIndex(): void
     {
-        $this->stockWaits = true;
+        // With Magento's inventory modules too: an import can write the stock item, which adds the row,
+        // before the status bradProducts reads.
         $this->notIndexed[IndexState::STOCK] = [11];
         $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 12]])
             ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
@@ -545,22 +590,141 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([IndexState::CATEGORIES, IndexState::STOCK], array_column($this->indexChecks, 0));
     }
 
-    public function testWithTheInventoryModulesTheStockIndexIsNotRead(): void
-    {
-        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
-
-        $this->cron([1])->execute();
-
-        $this->assertNotContains(IndexState::STOCK, array_column($this->indexChecks, 0));
-    }
-
     public function testWithoutActivePriceRulesTheRuleIndexIsNotRead(): void
     {
         $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
 
         $this->cron([1])->execute();
 
-        $this->assertSame([IndexState::CATEGORIES], array_column($this->indexChecks, 0));
+        $this->assertSame([IndexState::CATEGORIES, IndexState::STOCK], array_column($this->indexChecks, 0));
+    }
+
+    public function testStockChangelogProductsAreCheckedWithTheOthersAndBothCursorsMove(): void
+    {
+        $this->stockIds = [20, 11];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12, 20]])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([20], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+        $this->assertSame([1 => 90], $this->savedStockVersions);
+    }
+
+    public function testOnlyTheStockChangelogHasNewRows(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->stockIds = [20];
+        $this->changelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->method('notify')->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => 90], $this->savedStockVersions);
+    }
+
+    public function testAnEmptySearchChangelogDoesNotStopTheStockChanges(): void
+    {
+        $this->changelogReader = $this->createMock(ChangelogReader::class);
+        $this->changelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->changelogReader->method('getCurrentVersion')->willReturn(0);
+        $this->lastVersion = 0;
+        $this->stockIds = [20];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->method('notify')->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => 90], $this->savedStockVersions);
+    }
+
+    public function testTheFirstRunThatReadsTheStockChangelogStartsAtItsEnd(): void
+    {
+        $this->lastStockVersion = null;
+        $this->stockIds = [20];
+        $this->stockChangelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => 90], $this->savedStockVersions);
+    }
+
+    public function testWithoutTheStockCursorColumnTheSearchChangelogStillSyncs(): void
+    {
+        $this->stockCursorColumn = false;
+        $this->lastStockVersion = null;
+        $this->stockChangelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+        $this->assertSame([], $this->savedStockVersions);
+        $this->assertCount(1, array_filter($this->logsOf('error'), static function (array $log): bool {
+            return strpos($log[1], 'run setup:upgrade') !== false;
+        }));
+    }
+
+    public function testWithoutAStockChangelogTheSearchChangelogStillSyncs(): void
+    {
+        // A stock index on "Update on Save" has no changelog.
+        $this->stockChangelogReader = $this->createMock(ChangelogReader::class);
+        $this->stockChangelogReader->method('isChangelogAvailable')->willReturn(false);
+        $this->stockChangelogReader->expects($this->never())->method('getChangedProductIds');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+        $this->assertSame([], $this->logsOf('error'));
+    }
+
+    public function testTheParentsOfChangedProductsAreCheckedToo(): void
+    {
+        // The stock index sets a bundle out of stock when it indexes its part, with no row for the bundle.
+        $this->parents = [11 => [72], 12 => [72, 73]];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12, 72, 73]])
+            ->willReturn([1 => ['changed' => [72], 'hashes' => [72 => 'h72']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([72], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+
+        $this->cron([1])->execute();
+    }
+
+    public function testAParentWaitsWhileAChildIsNotStockIndexed(): void
+    {
+        $this->parents = [90 => [72]];
+        $this->changelogIds = [90];
+        $this->children = [72 => [90, 91]];
+        $this->notIndexed[IndexState::STOCK] = [90];
+        $this->changeFilter->expects($this->never())->method('filter');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => [[], [90, 72]]], $this->heldUpdates);
+        $this->assertContains([IndexState::STOCK, [90, 72, 91]], $this->indexChecks);
+    }
+
+    public function testABrokenParentCheckSendsTheChangedProducts(): void
+    {
+        $this->relations = $this->createMock(ProductRelations::class);
+        $this->relations->method('parentsOf')->willThrowException(new \RuntimeException('db gone'));
+        $this->relations->method('childrenOf')->willReturn([]);
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
     }
 
     /**
@@ -617,6 +781,9 @@ class SyncChangedProductsTest extends TestCase
                 ->getMock();
             $state->method('getId')->willReturn(1);
             $state->setLastVersionId($this->lastVersion);
+            if ($this->lastStockVersion !== null) {
+                $state->setLastStockVersionId($this->lastStockVersion);
+            }
             return $state;
         });
         $this->syncStateResource->method('loadByStoreId')->willReturnCallback(
@@ -636,7 +803,9 @@ class SyncChangedProductsTest extends TestCase
             $this->changeFilter,
             $this->indexState,
             $this->heldProducts,
-            $this->resendProducts
+            $this->resendProducts,
+            $this->stockChangelogReader,
+            $this->relations
         );
     }
 

@@ -12,12 +12,12 @@ use Psr\Log\LoggerInterface;
 /**
  * Changelog Reader Service
  *
- * Reads changed product IDs from the catalogsearch_fulltext_cl changelog table.
- * This table is populated by database triggers when product data changes.
+ * Reads changed product IDs from a Magento changelog table: catalogsearch_fulltext_cl by default, and
+ * cataloginventory_stock_cl for the stock reader (see di.xml).
+ * These tables are populated by database triggers when product data changes.
  */
 class ChangelogReader
 {
-    private const CHANGELOG_TABLE = 'catalogsearch_fulltext_cl';
     private const ENTITY_COLUMN = 'entity_id';
     private const VERSION_COLUMN = 'version_id';
 
@@ -32,15 +32,23 @@ class ChangelogReader
     private LoggerInterface $logger;
 
     /**
+     * @var string
+     */
+    private string $changelogTable;
+
+    /**
      * @param ResourceConnection $resourceConnection
      * @param LoggerInterface $logger
+     * @param string $changelogTable
      */
     public function __construct(
         ResourceConnection $resourceConnection,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        string $changelogTable = 'catalogsearch_fulltext_cl'
     ) {
         $this->resourceConnection = $resourceConnection;
         $this->logger = $logger;
+        $this->changelogTable = $changelogTable;
     }
 
     /**
@@ -54,7 +62,7 @@ class ChangelogReader
     {
         try {
             $connection = $this->resourceConnection->getConnection();
-            $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+            $tableName = $this->resourceConnection->getTableName($this->changelogTable);
 
             // Check if table exists
             if (!$connection->isTableExists($tableName)) {
@@ -109,7 +117,7 @@ class ChangelogReader
         }
 
         $connection = $this->resourceConnection->getConnection();
-        $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+        $tableName = $this->resourceConnection->getTableName($this->changelogTable);
         if (!$connection->isTableExists($tableName)) {
             return [];
         }
@@ -139,7 +147,7 @@ class ChangelogReader
     public function getProductsChangedAfterInRange(int $versionId, int $fromId, ?int $toId): array
     {
         $connection = $this->resourceConnection->getConnection();
-        $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+        $tableName = $this->resourceConnection->getTableName($this->changelogTable);
         if (!$connection->isTableExists($tableName)) {
             return [];
         }
@@ -165,7 +173,7 @@ class ChangelogReader
     {
         try {
             $connection = $this->resourceConnection->getConnection();
-            $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+            $tableName = $this->resourceConnection->getTableName($this->changelogTable);
 
             if (!$connection->isTableExists($tableName)) {
                 return 0;
@@ -194,7 +202,7 @@ class ChangelogReader
     {
         try {
             $connection = $this->resourceConnection->getConnection();
-            $tableName = $this->resourceConnection->getTableName(self::CHANGELOG_TABLE);
+            $tableName = $this->resourceConnection->getTableName($this->changelogTable);
 
             return $connection->isTableExists($tableName);
         } catch (\Exception $e) {

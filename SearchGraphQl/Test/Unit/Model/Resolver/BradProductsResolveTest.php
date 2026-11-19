@@ -75,9 +75,9 @@ class BradProductsResolveTest extends TestCase
     public function testTheSyncCursorIsReadBeforeThePageLoads(): void
     {
         $calls = [];
-        $this->fetchRecorder->method('cursor')->willReturnCallback(function () use (&$calls): ?int {
+        $this->fetchRecorder->method('cursor')->willReturnCallback(function () use (&$calls): ?array {
             $calls[] = 'cursor';
-            return 400;
+            return [400, 70];
         });
         $this->collection->method('getIterator')->willReturnCallback(function () use (&$calls) {
             $calls[] = 'load';
@@ -92,12 +92,12 @@ class BradProductsResolveTest extends TestCase
     public function testNamedProductsAreRecordedWhetherOrNotTheyCameBack(): void
     {
         // BradSearch reads a named product it does not get back as removed.
-        $this->fetchRecorder->method('cursor')->with(1)->willReturn(400);
+        $this->fetchRecorder->method('cursor')->with(1)->willReturn([400, 70]);
         $this->priceCalculator->method('calculate')->willReturn(null);
         $this->collectionYields([$this->product(11)]);
         $this->fetchRecorder->expects($this->never())->method('recordRange');
         $this->fetchRecorder->expects($this->once())->method('record')
-            ->with(1, 400, $this->callback(function (array $ids): bool {
+            ->with(1, [400, 70], $this->callback(function (array $ids): bool {
                 return array_values(array_unique($ids)) === [11, 12, 13];
             }));
 
@@ -106,17 +106,17 @@ class BradProductsResolveTest extends TestCase
 
     public function testAFullFirstPageStandsForTheIdsUpToItsLastProduct(): void
     {
-        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->fetchRecorder->method('cursor')->willReturn([400, 70]);
         $this->priceCalculator->method('calculate')->willReturn(null);
         $this->collectionYields([$this->product(5), $this->product(9)]);
-        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 0, 9);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, [400, 70], 0, 9);
 
         $this->resolve(['pageSize' => 2, 'currentPage' => 0]);
     }
 
     public function testALaterPageStartsAtThePreviousPagesLastProductAndTheLastPageHasNoEnd(): void
     {
-        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->fetchRecorder->method('cursor')->willReturn([400, 70]);
         $this->priceCalculator->method('calculate')->willReturn(null);
         $this->collectionYields([$this->product(5)]);
         $limits = [];
@@ -130,7 +130,7 @@ class BradProductsResolveTest extends TestCase
         $connection = $this->createMock(AdapterInterface::class);
         $connection->method('fetchOne')->willReturn('4');
         $this->collection->method('getConnection')->willReturn($connection);
-        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 4, null);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, [400, 70], 4, null);
 
         $this->resolve(['pageSize' => 2, 'currentPage' => 1]);
 
@@ -139,7 +139,7 @@ class BradProductsResolveTest extends TestCase
 
     public function testAPagePastTheEndStartsAtTheCollectionsLastProduct(): void
     {
-        $this->fetchRecorder->method('cursor')->willReturn(400);
+        $this->fetchRecorder->method('cursor')->willReturn([400, 70]);
         $this->collectionYields([]);
         $select = $this->createMock(Select::class);
         $select->method($this->anything())->willReturnSelf();
@@ -147,7 +147,7 @@ class BradProductsResolveTest extends TestCase
         $connection = $this->createMock(AdapterInterface::class);
         $connection->method('fetchOne')->willReturnOnConsecutiveCalls(false, '77');
         $this->collection->method('getConnection')->willReturn($connection);
-        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, 400, 77, null);
+        $this->fetchRecorder->expects($this->once())->method('recordRange')->with(1, [400, 70], 77, null);
 
         $this->resolve(['pageSize' => 2, 'currentPage' => 9]);
     }

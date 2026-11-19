@@ -10,6 +10,7 @@
         <column xsi:type="int" name="id" unsigned="true" nullable="false" identity="true" comment="ID"/>
         <column xsi:type="int" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
         <column xsi:type="bigint" name="last_version_id" unsigned="true" nullable="false" default="0" comment="Last Processed Changelog Version ID"/>
+        <column xsi:type="bigint" name="last_stock_version_id" unsigned="true" nullable="true" comment="Last Processed Stock Changelog Version ID, null until first read"/>
         <column xsi:type="timestamp" name="last_sync_at" on_update="false" nullable="true" comment="Last Sync Timestamp"/>
         <column xsi:type="timestamp" name="created_at" on_update="false" nullable="false" default="CURRENT_TIMESTAMP" comment="Created At"/>
         <column xsi:type="timestamp" name="updated_at" on_update="true" nullable="false" default="CURRENT_TIMESTAMP" comment="Updated At"/>

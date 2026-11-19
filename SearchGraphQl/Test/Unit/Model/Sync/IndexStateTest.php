@@ -10,7 +10,6 @@ use BradSearch\SearchGraphQl\Model\Sync\IndexState;
 use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\DB\Adapter\AdapterInterface;
 use Magento\Framework\DB\Select;
-use Magento\Framework\Module\Manager as ModuleManager;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 
@@ -24,9 +23,6 @@ class IndexStateTest extends TestCase
 
     /** @var string[] from() tables */
     private array $froms = [];
-
-    /** @var ModuleManager&MockObject */
-    private $modules;
 
     protected function setUp(): void
     {
@@ -46,7 +42,6 @@ class IndexStateTest extends TestCase
             return $select;
         });
         $this->connection->method('isTableExists')->willReturn(true);
-        $this->modules = $this->createMock(ModuleManager::class);
     }
 
     public function testProductsWithChangelogRowsAfterTheIndexedVersionAreWaiting(): void
@@ -118,14 +113,6 @@ class IndexStateTest extends TestCase
         $this->assertContains(['indexer_id IN (?)', ['cataloginventory_stock']], $this->wheres);
     }
 
-    public function testStockWaitsForTheIndexOnlyWithoutTheInventoryModules(): void
-    {
-        $this->modules->method('isEnabled')->with('Magento_InventoryCatalog')->willReturnOnConsecutiveCalls(true, false);
-
-        $this->assertFalse($this->state()->stockWaitsForIndex());
-        $this->assertTrue($this->state()->stockWaitsForIndex());
-    }
-
     public function testUpdateOnSaveHoldsNothing(): void
     {
         $this->connection->method('fetchRow')->willReturn(['mode' => 'disabled', 'status' => 'idle', 'version_id' => '0']);
@@ -171,6 +158,6 @@ class IndexStateTest extends TestCase
         $resource->method('getConnection')->willReturn($this->connection);
         $resource->method('getTableName')->willReturnArgument(0);
 
-        return new IndexState($resource, $this->modules);
+        return new IndexState($resource);
     }
 }
