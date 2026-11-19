@@ -79,7 +79,13 @@
     </type>
 
     <!-- An order's stock status change has no changelog row; Magento's inventory modules may be missing. -->
-    <type name="Magento\InventoryIndexer\Model\Queue\UpdateIndexSalabilityStatus">
+    <!-- The steps that write the new status, not the consumer: it renumbers numeric sku keys when it adds
+         the parents. -->
+    <type name="Magento\InventoryIndexer\Model\Queue\UpdateIndexSalabilityStatus\UpdateLegacyStock">
+        <plugin name="bradsearch_mark_salability_changes"
+                type="BradSearch\SearchGraphQl\Plugin\InventoryIndexer\MarkSalabilityChanges"/>
+    </type>
+    <type name="Magento\InventoryIndexer\Model\Queue\UpdateIndexSalabilityStatus\IndexProcessor">
         <plugin name="bradsearch_mark_salability_changes"
                 type="BradSearch\SearchGraphQl\Plugin\InventoryIndexer\MarkSalabilityChanges"/>
     </type>
