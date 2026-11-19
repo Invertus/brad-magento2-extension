@@ -16,6 +16,7 @@ use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\IndexState;
 use BradSearch\SearchGraphQl\Model\Sync\ProductRelations;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
+use BradSearch\SearchGraphQl\Model\Sync\StockStatusSnapshot;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\Store;
 use Magento\Store\Model\StoreManagerInterface;
@@ -86,6 +87,8 @@ class SyncChangedProductsTest extends TestCase
 
     private bool $stockCursorColumn = true;
 
+    private bool $stateExists = true;
+
     /** @var array<int, int[]> child => parents */
     private array $parents = [];
 
@@ -94,6 +97,15 @@ class SyncChangedProductsTest extends TestCase
 
     /** @var ProductRelations&MockObject */
     private $relations;
+
+    /** @var StockStatusSnapshot&MockObject */
+    private $snapshot;
+
+    /** @var array<int, array{product_id: int, website_id: int, stock_status: int}> */
+    private array $statusChanges = [];
+
+    /** @var string[] Calls on the held products and the snapshot, in order */
+    private array $calls = [];
 
     /** @var array<int, int> store id => website id (default 1) */
     private array $websites = [];
@@ -142,6 +154,15 @@ class SyncChangedProductsTest extends TestCase
             ->willReturnCallback(function (): array {
                 return $this->stockIds;
             });
+
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->method('changes')->willReturnCallback(function (): array {
+            return $this->statusChanges;
+        });
+        $this->snapshot->method('save')->willReturnCallback(function (array $rows): void {
+            $this->calls[] = 'save ' . implode(',', array_column($rows, 'product_id'));
+        });
 
         $this->relations = $this->createMock(ProductRelations::class);
         $this->relations->method('parentsOf')->willReturnCallback(function (array $ids): array {
@@ -688,6 +709,135 @@ class SyncChangedProductsTest extends TestCase
         $this->assertSame([], $this->logsOf('error'));
     }
 
+    public function testAStockStatusChangeWithNoChangelogRowIsHeldThenCheckedThroughTheFilter(): void
+    {
+        // A stock import that writes the status while the stock item stays the same leaves no row.
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->statusChanges = [['product_id' => 20, 'website_id' => 0, 'stock_status' => 1]];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]], [1 => []])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->expects($this->once())->method('notify')->with([20], 1, self::CURRENT_VERSION, true)
+            ->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame(['held 1 /20', 'save 20', 'held 1 20/'], $this->calls);
+        $this->assertSame([], $this->held[1]);
+    }
+
+    public function testEveryStoreHoldsTheStatusChangesBeforeTheSnapshotIsSaved(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->statusChanges = [
+            ['product_id' => 20, 'website_id' => 0, 'stock_status' => 0],
+            ['product_id' => 21, 'website_id' => 0, 'stock_status' => 1],
+        ];
+        $this->changeFilter->method('filter')->willReturn([
+            1 => ['changed' => [], 'hashes' => []],
+            3 => ['changed' => [], 'hashes' => []],
+        ]);
+
+        $this->cron([1, 3])->execute();
+
+        $this->assertSame(['held 1 /20,21', 'held 3 /20,21', 'save 20,21'], array_slice($this->calls, 0, 3));
+    }
+
+    public function testAFailedNotificationKeepsTheStatusChangeHeld(): void
+    {
+        $this->lastVersion = self::CURRENT_VERSION;
+        $this->statusChanges = [['product_id' => 20, 'website_id' => 0, 'stock_status' => 0]];
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->method('notify')->willReturn(false);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([20 => false], $this->held[1]);
+    }
+
+    public function testWithoutTheStockStatusTableTheSyncWorksAsBefore(): void
+    {
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(false);
+        $this->snapshot->expects($this->never())->method('changes');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertCount(1, array_filter($this->logsOf('error'), static function (array $log): bool {
+            return strpos($log[1], 'Stock status table missing') !== false;
+        }));
+    }
+
+    public function testWithoutTheHeldTableTheStockStatusIsNotChecked(): void
+    {
+        // A status change is carried by the held table until it is sent; without it, it would be lost.
+        $this->heldProducts = $this->heldProductsMock(false);
+        $this->snapshot->expects($this->never())->method('changes');
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+    }
+
+    public function testABrokenStockStatusCheckDoesNotStopTheSync(): void
+    {
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->method('changes')->willThrowException(new \RuntimeException('db gone'));
+        $this->snapshot->expects($this->never())->method('save');
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [10, 11, 12]])
+            ->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+    }
+
+    public function testHeldProductsAreHandledWhileTheChangelogsAreEmpty(): void
+    {
+        // Magento's hourly cleanup can empty a changelog: its max version reads 0.
+        $this->changelogReader = $this->createMock(ChangelogReader::class);
+        $this->changelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->changelogReader->method('getCurrentVersion')->willReturn(0);
+        $this->stockChangelogReader = $this->createMock(ChangelogReader::class);
+        $this->stockChangelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->stockChangelogReader->method('getCurrentVersion')->willReturn(0);
+        $this->statusChanges = [['product_id' => 20, 'website_id' => 0, 'stock_status' => 0]];
+        $this->changeFilter->expects($this->once())->method('filter')->with([1 => [20]])
+            ->willReturn([1 => ['changed' => [20], 'hashes' => [20 => 'h20']]]);
+        $this->notifier->method('notify')->willReturn(true);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([1 => 400], $this->savedVersions, 'the cursor does not move back');
+    }
+
+    public function testANewStoreDoesNotStartWhileTheChangelogReadsZero(): void
+    {
+        // 0 is an empty changelog or a failed read; a cursor started there would replay the whole backlog.
+        $this->stateExists = false;
+        $this->changelogReader = $this->createMock(ChangelogReader::class);
+        $this->changelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->changelogReader->method('getCurrentVersion')->willReturn(0);
+        $this->changeFilter->expects($this->never())->method('filter');
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedVersions);
+    }
+
+    public function testAnEmptyStockChangelogDoesNotStartTheStockCursor(): void
+    {
+        $this->lastStockVersion = null;
+        $this->stockChangelogReader = $this->createMock(ChangelogReader::class);
+        $this->stockChangelogReader->method('isChangelogAvailable')->willReturn(true);
+        $this->stockChangelogReader->method('getCurrentVersion')->willReturn(0);
+        $this->changeFilter->method('filter')->willReturn([1 => ['changed' => [], 'hashes' => []]]);
+
+        $this->cron([1])->execute();
+
+        $this->assertSame([], $this->savedStockVersions);
+        $this->assertSame([1 => self::CURRENT_VERSION], $this->savedVersions);
+    }
+
     public function testTheParentsOfChangedProductsAreCheckedToo(): void
     {
         // The stock index sets a bundle out of stock when it indexes its part, with no row for the bundle.
@@ -744,7 +894,14 @@ class SyncChangedProductsTest extends TestCase
         });
         $heldProducts->method('update')->willReturnCallback(
             function (int $storeId, array $release, array $hold, array $sentAtLimit = []): void {
+                $this->calls[] = 'held ' . $storeId . ' ' . implode(',', $release) . '/' . implode(',', $hold);
                 $this->heldUpdates[$storeId] = [$release, $hold];
+                foreach ($release as $id) {
+                    unset($this->held[$storeId][$id]);
+                }
+                foreach ($hold as $id) {
+                    $this->held[$storeId][$id] = $this->held[$storeId][$id] ?? false;
+                }
                 if (!empty($sentAtLimit)) {
                     $this->sentAtLimit[$storeId] = $sentAtLimit;
                 }
@@ -779,7 +936,7 @@ class SyncChangedProductsTest extends TestCase
                 ->disableOriginalConstructor()
                 ->onlyMethods(['getId'])
                 ->getMock();
-            $state->method('getId')->willReturn(1);
+            $state->method('getId')->willReturn($this->stateExists ? 1 : null);
             $state->setLastVersionId($this->lastVersion);
             if ($this->lastStockVersion !== null) {
                 $state->setLastStockVersionId($this->lastStockVersion);
@@ -805,7 +962,8 @@ class SyncChangedProductsTest extends TestCase
             $this->heldProducts,
             $this->resendProducts,
             $this->stockChangelogReader,
-            $this->relations
+            $this->relations,
+            $this->snapshot
         );
     }
 

@@ -48,5 +48,15 @@
         "constraint": {
             "PRIMARY": true
         }
+    },
+    "bradsearch_stock_status": {
+        "column": {
+            "product_id": true,
+            "website_id": true,
+            "stock_status": true
+        },
+        "constraint": {
+            "PRIMARY": true
+        }
     }
 }

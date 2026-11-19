@@ -53,4 +53,13 @@
             <column name="product_id"/>
         </constraint>
     </table>
+    <table name="bradsearch_stock_status" resource="default" engine="innodb" comment="BradSearch Stock Status Last Seen By The Sync">
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="smallint" name="website_id" unsigned="true" nullable="false" comment="Website ID"/>
+        <column xsi:type="smallint" name="stock_status" unsigned="true" nullable="false" comment="Stock Status"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="product_id"/>
+            <column name="website_id"/>
+        </constraint>
+    </table>
 </schema>

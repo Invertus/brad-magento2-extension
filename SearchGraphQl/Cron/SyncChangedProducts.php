@@ -15,6 +15,7 @@ use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\IndexState;
 use BradSearch\SearchGraphQl\Model\Sync\ProductRelations;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
+use BradSearch\SearchGraphQl\Model\Sync\StockStatusSnapshot;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -88,6 +89,11 @@ class SyncChangedProducts
     private ProductRelations $productRelations;
 
     /**
+     * @var StockStatusSnapshot
+     */
+    private StockStatusSnapshot $stockStatusSnapshot;
+
+    /**
      * @var int
      */
     private int $maxHoldMinutes;
@@ -120,6 +126,7 @@ class SyncChangedProducts
      * @param ResendProducts $resendProducts
      * @param ChangelogReader $stockChangelogReader Reads cataloginventory_stock_cl
      * @param ProductRelations $productRelations
+     * @param StockStatusSnapshot $stockStatusSnapshot
      * @param int $maxHoldMinutes A product held longer than this is sent anyway, with a warning, and sent
      *        again once Magento has indexed it
      */
@@ -136,6 +143,7 @@ class SyncChangedProducts
         ResendProducts $resendProducts,
         ChangelogReader $stockChangelogReader,
         ProductRelations $productRelations,
+        StockStatusSnapshot $stockStatusSnapshot,
         int $maxHoldMinutes = 15
     ) {
         $this->changelogReader = $changelogReader;
@@ -150,6 +158,7 @@ class SyncChangedProducts
         $this->resendProducts = $resendProducts;
         $this->stockChangelogReader = $stockChangelogReader;
         $this->productRelations = $productRelations;
+        $this->stockStatusSnapshot = $stockStatusSnapshot;
         $this->maxHoldMinutes = $maxHoldMinutes;
     }
 
@@ -172,27 +181,26 @@ class SyncChangedProducts
             return;
         }
 
-        // Get current changelog version
+        // Get current changelog version. Magento's hourly cleanup can empty a changelog (version 0), and
+        // held, marked and stock status changes are still handled then.
         $currentVersion = $this->changelogReader->getCurrentVersion();
         $this->currentStockVersion = $this->stockVersion();
-        if ($currentVersion === 0 && empty($this->currentStockVersion)) {
-            $this->logger->debug('BradSearch Sync: No changelog entries found');
-            return;
-        }
 
         $this->holding = $this->holdingAvailable();
         $this->resending = $this->resendingAvailable();
 
+        $storeIds = [];
+        foreach ($this->storeManager->getStores() as $store) {
+            // Check if sync is enabled for this store
+            if ($this->webhookNotifier->isSyncEnabled((int)$store->getId())) {
+                $storeIds[] = (int)$store->getId();
+            }
+        }
+        $this->noteStockStatusChanges($storeIds);
+
         // Process each store that has sync enabled
         $pending = [];
-        foreach ($this->storeManager->getStores() as $store) {
-            $storeId = (int)$store->getId();
-
-            // Check if sync is enabled for this store
-            if (!$this->webhookNotifier->isSyncEnabled($storeId)) {
-                continue;
-            }
-
+        foreach ($storeIds as $storeId) {
             try {
                 $changes = $this->collectStore($storeId, $currentVersion);
                 if ($changes !== null) {
@@ -257,6 +265,9 @@ class SyncChangedProducts
     {
         // Get or create sync state for this store
         $syncState = $this->getOrCreateSyncState($storeId, $currentVersion);
+        if ($syncState === null) {
+            return null;
+        }
         $lastVersionId = $syncState->getLastVersionId();
 
         $lastStockVersionId = $syncState->getLastStockVersionId();
@@ -389,6 +400,49 @@ class SyncChangedProducts
     }
 
     /**
+     * Hold, in every store with sync on, the products whose stock status changed since the last run,
+     * then store the statuses read. Held first: a held product is checked through the filter and stays held
+     * until a run has sent it, so a failed notification loses nothing.
+     *
+     * @param int[] $storeIds
+     * @return void
+     */
+    private function noteStockStatusChanges(array $storeIds): void
+    {
+        if (!$this->holding || empty($storeIds)) {
+            return;
+        }
+
+        try {
+            if (!$this->stockStatusSnapshot->isAvailable()) {
+                $this->logger->error(
+                    'BradSearch Sync: Stock status table missing, stock changes without a changelog row are not seen (run setup:upgrade)'
+                );
+                return;
+            }
+
+            $rows = $this->stockStatusSnapshot->changes();
+            if (empty($rows)) {
+                return;
+            }
+
+            $productIds = array_values(array_unique(array_column($rows, 'product_id')));
+            foreach ($storeIds as $storeId) {
+                $this->heldProducts->update($storeId, [], $productIds);
+            }
+            $this->stockStatusSnapshot->save($rows);
+
+            $this->logger->info('BradSearch Sync: Stock status changed, checking the products', [
+                'product_count' => count($productIds)
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Stock status check failed', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
      * @return int|null The stock changelog's max version; null when it is not read this run
      */
     private function stockVersion(): ?int
@@ -405,7 +459,10 @@ class SyncChangedProducts
                 return null;
             }
 
-            return $this->stockChangelogReader->getCurrentVersion();
+            // 0 is an empty changelog or a failed read: nothing to read, and the cursor must not start there.
+            $version = $this->stockChangelogReader->getCurrentVersion();
+
+            return $version > 0 ? $version : null;
         } catch (\Throwable $e) {
             $this->logger->error('BradSearch Sync: Stock changelog check failed, reading the search changelog only', [
                 'error' => $e->getMessage()
@@ -716,14 +773,17 @@ class SyncChangedProducts
      *
      * @param int $storeId
      * @param int $currentVersion Current changelog max version
-     * @return SyncState
+     * @return SyncState|null Null for a new store while the changelog reads 0 (empty, or a failed read)
      */
-    private function getOrCreateSyncState(int $storeId, int $currentVersion): SyncState
+    private function getOrCreateSyncState(int $storeId, int $currentVersion): ?SyncState
     {
         /** @var SyncState $syncState */
         $syncState = $this->syncStateFactory->create();
         $this->syncStateResource->loadByStoreId($syncState, $storeId);
 
+        if (!$syncState->getId() && $currentVersion === 0) {
+            return null;
+        }
         if (!$syncState->getId()) {
             // Initialize from current version to skip historical changes
             // Assumes full sync already performed on BradSearch backend

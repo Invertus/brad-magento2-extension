@@ -12,6 +12,7 @@ use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\ProductRelations;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
+use BradSearch\SearchGraphQl\Model\Sync\StockStatusSnapshot;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Framework\App\ResourceConnection;
 use Magento\Framework\DB\Adapter\AdapterInterface;
@@ -46,6 +47,9 @@ class FetchRecorderTest extends TestCase
     /** @var ProductRelations&MockObject */
     private $relations;
 
+    /** @var StockStatusSnapshot&MockObject */
+    private $snapshot;
+
     protected function setUp(): void
     {
         $this->connection = $this->createMock(AdapterInterface::class);
@@ -65,6 +69,9 @@ class FetchRecorderTest extends TestCase
         $this->relations = $this->createMock(ProductRelations::class);
         $this->relations->method('childrenOf')->willReturn([]);
         $this->relations->method('childrenInRange')->willReturn([]);
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->method('changedAmong')->willReturn([]);
     }
 
     public function testTheCursorsAreTheStoresSyncState(): void
@@ -281,6 +288,47 @@ class FetchRecorderTest extends TestCase
         $recorder->flush();
     }
 
+    public function testAFetchedProductWhoseStockStatusTheSyncHasNotSeenIsMarked(): void
+    {
+        // An import can write the status with no changelog row; the next run sends it, but an undo before
+        // that run would leave BradSearch with the status it read.
+        $this->changelogReader->method('getProductsChangedAfter')->willReturn([]);
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->expects($this->once())->method('changedAmong')->with([11, 12], 0, null)->willReturn([12]);
+        $this->resendProducts->expects($this->once())->method('mark')->with(1, [12]);
+
+        $recorder = $this->recorder();
+        $recorder->record(1, [400, null], [11, 12]);
+        $recorder->flush();
+    }
+
+    public function testAPageChecksTheStockStatusInItsRange(): void
+    {
+        $this->changelogReader->method('getProductsChangedAfterInRange')->willReturn([]);
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(true);
+        $this->snapshot->expects($this->once())->method('changedAmong')->with(null, 4, 90)->willReturn([50]);
+        $this->resendProducts->expects($this->once())->method('mark')->with(2, [50]);
+
+        $recorder = $this->recorder();
+        $recorder->recordRange(2, [400, null], 4, 90);
+        $recorder->flush();
+    }
+
+    public function testWithoutTheStockStatusTableOnlyTheChangelogsCount(): void
+    {
+        $this->changelogReader->method('getProductsChangedAfter')->willReturn([11]);
+        $this->snapshot = $this->createMock(StockStatusSnapshot::class);
+        $this->snapshot->method('isAvailable')->willReturn(false);
+        $this->snapshot->expects($this->never())->method('changedAmong');
+        $this->resendProducts->expects($this->once())->method('mark')->with(1, [11]);
+
+        $recorder = $this->recorder();
+        $recorder->record(1, [400, null], [11, 12]);
+        $recorder->flush();
+    }
+
     public function testWithoutACursorNothingIsRecorded(): void
     {
         $this->changelogReader->expects($this->never())->method('getProductsChangedAfter');
@@ -324,7 +372,8 @@ class FetchRecorderTest extends TestCase
             $this->notifier,
             new NullLogger(),
             $this->stockChangelogReader,
-            $this->relations
+            $this->relations,
+            $this->snapshot
         );
     }
 }

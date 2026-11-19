@@ -19,7 +19,9 @@ use Psr\Log\LoggerInterface;
  * again. A product already sent at the hold limit is not marked: it has a hash, any new change sends it
  * again, and it is checked again once indexed; marking it would send it on every fetch while it waits.
  * Both changelogs the sync reads count (search and stock), and a fetched bundle, grouped or configurable
- * product counts as changed when one of its children has a row: its stock status follows the child's.
+ * product counts as changed when one of its children has a row: its stock status follows the child's. So
+ * does a fetched product whose stock status differs from the status the sync last saw: some writers
+ * change it with no changelog row.
  *
  * A product the request could not build did not reach BradSearch, so its stored hash is forgotten and
  * its next changelog entry sends it again. It is not marked: a product that keeps failing would then
@@ -91,6 +93,16 @@ class FetchRecorder
     private ProductRelations $productRelations;
 
     /**
+     * @var StockStatusSnapshot
+     */
+    private StockStatusSnapshot $stockStatusSnapshot;
+
+    /**
+     * @var bool|null
+     */
+    private ?bool $snapshot = null;
+
+    /**
      * @param ResourceConnection $resource
      * @param ChangelogReader $changelogReader
      * @param ResendProducts $resendProducts
@@ -100,6 +112,7 @@ class FetchRecorder
      * @param LoggerInterface $logger
      * @param ChangelogReader $stockChangelogReader Reads cataloginventory_stock_cl
      * @param ProductRelations $productRelations
+     * @param StockStatusSnapshot $stockStatusSnapshot
      */
     public function __construct(
         ResourceConnection $resource,
@@ -110,7 +123,8 @@ class FetchRecorder
         WebhookNotifier $webhookNotifier,
         LoggerInterface $logger,
         ChangelogReader $stockChangelogReader,
-        ProductRelations $productRelations
+        ProductRelations $productRelations,
+        StockStatusSnapshot $stockStatusSnapshot
     ) {
         $this->resource = $resource;
         $this->changelogReader = $changelogReader;
@@ -121,6 +135,7 @@ class FetchRecorder
         $this->logger = $logger;
         $this->stockChangelogReader = $stockChangelogReader;
         $this->productRelations = $productRelations;
+        $this->stockStatusSnapshot = $stockStatusSnapshot;
     }
 
     /**
@@ -273,7 +288,8 @@ class FetchRecorder
      * @param int[]|null $productIds Null for the id range
      * @param int $fromId
      * @param int|null $toId
-     * @return int[] Products with a row after the cursor in the search or the stock changelog
+     * @return int[] Products with a row after the cursor in the search or the stock changelog, or a stock
+     *         status the sync has not seen
      */
     private function changedAfter(array $cursor, ?array $productIds, int $fromId, ?int $toId): array
     {
@@ -285,6 +301,9 @@ class FetchRecorder
             $changed = array_merge($changed, $productIds === null
                 ? $this->stockChangelogReader->getProductsChangedAfterInRange($stockCursor, $fromId, $toId)
                 : $this->stockChangelogReader->getProductsChangedAfter($stockCursor, $productIds));
+        }
+        if ($this->snapshotAvailable()) {
+            $changed = array_merge($changed, $this->stockStatusSnapshot->changedAmong($productIds, $fromId, $toId));
         }
 
         return $changed;
@@ -325,6 +344,18 @@ class FetchRecorder
         }
 
         return $parents;
+    }
+
+    /**
+     * @return bool False until setup:upgrade has created the stock status table
+     */
+    private function snapshotAvailable(): bool
+    {
+        if ($this->snapshot === null) {
+            $this->snapshot = $this->stockStatusSnapshot->isAvailable();
+        }
+
+        return $this->snapshot;
     }
 
     /**
