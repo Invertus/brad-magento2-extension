@@ -43,8 +43,8 @@ class SortPopularityResolver implements ResolverInterface
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ) {
         // Only return sort_popularity when authenticated with API key
         $storeId = (int) $context->getExtensionAttributes()->getStore()->getId();

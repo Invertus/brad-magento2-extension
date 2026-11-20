@@ -44,8 +44,8 @@ class ProductsQueryPageSizeCap
         Field $field,
         $context,
         ResolveInfo $info,
-        array $value = null,
-        array $args = null
+        ?array $value = null,
+        ?array $args = null
     ): array {
         // Get pageSize from args, default to DEFAULT_PAGE_SIZE
         $pageSize = (int)($args['pageSize'] ?? self::DEFAULT_PAGE_SIZE);
