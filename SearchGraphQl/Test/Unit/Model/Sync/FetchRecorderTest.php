@@ -189,8 +189,11 @@ class FetchRecorderTest extends TestCase
     public function testAProductThatCouldNotBeBuiltHasItsHashForgottenNotAMark(): void
     {
         // Its next changelog entry sends it again. A mark would send a product that keeps failing every run.
+        $forgotten = [];
         $this->changeFilter->expects($this->exactly(2))->method('forget')
-            ->withConsecutive([[12, 13], 1], [[40], 2]);
+            ->willReturnCallback(function (array $productIds, int $storeId) use (&$forgotten): void {
+                $forgotten[] = [$productIds, $storeId];
+            });
         $this->resendProducts->expects($this->never())->method('mark');
 
         $recorder = $this->recorder();
@@ -199,6 +202,8 @@ class FetchRecorderTest extends TestCase
         $recorder->recordFailure(2, 40);
         $recorder->flush();
         $recorder->flush();
+
+        $this->assertSame([[[12, 13], 1], [[40], 2]], $forgotten);
     }
 
     public function testAFailedForgetDoesNotStopTheMarks(): void
