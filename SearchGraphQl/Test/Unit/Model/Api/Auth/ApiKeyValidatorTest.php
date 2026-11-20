@@ -8,7 +8,7 @@ namespace BradSearch\SearchGraphQl\Test\Unit\Model\Api\Auth;
 
 use BradSearch\SearchGraphQl\Model\Api\Auth\ApiKeyValidator;
 use Magento\Framework\App\Config\ScopeConfigInterface;
-use Magento\Framework\App\RequestInterface;
+use Magento\Framework\App\Request\Http;
 use Magento\Framework\Encryption\EncryptorInterface;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +22,7 @@ class ApiKeyValidatorTest extends TestCase
     private const CONFIG_PATH_API_KEY = 'bradsearch_search/private_endpoint/api_key';
 
     /**
-     * @var RequestInterface|MockObject
+     * @var Http|MockObject
      */
     private $requestMock;
 
@@ -48,7 +48,7 @@ class ApiKeyValidatorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->requestMock = $this->createMock(RequestInterface::class);
+        $this->requestMock = $this->createMock(Http::class);
         $this->scopeConfigMock = $this->createMock(ScopeConfigInterface::class);
         $this->encryptorMock = $this->createMock(EncryptorInterface::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
