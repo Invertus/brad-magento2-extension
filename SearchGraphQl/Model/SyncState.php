@@ -74,6 +74,27 @@ class SyncState extends AbstractModel
     }
 
     /**
+     * Last processed version of the stock changelog; null until the sync has started reading it
+     *
+     * @return int|null
+     */
+    public function getLastStockVersionId(): ?int
+    {
+        $version = $this->getData('last_stock_version_id');
+
+        return $version === null ? null : (int)$version;
+    }
+
+    /**
+     * @param int $versionId
+     * @return $this
+     */
+    public function setLastStockVersionId(int $versionId): self
+    {
+        return $this->setData('last_stock_version_id', $versionId);
+    }
+
+    /**
      * Get last sync timestamp
      *
      * @return string|null

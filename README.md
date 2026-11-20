@@ -30,6 +30,11 @@ Turn live sync on in every store view your BradSearch application reads. Each st
 sends only the products whose data changed in that store view, so a change seen only in a
 store view with live sync off is not sent.
 
+Set the **Stock** indexer to "Update by Schedule" (`bin/magento indexer:set-mode schedule
+cataloginventory_stock`). Live sync reads its changelog to send stock changes. It also compares
+each product's stock status with the one it last saw, which finds changes that leave no
+changelog row (imports that write the status directly, orders).
+
 ## Extending
 
 - **Custom price logic for the `bradProducts` sync?** Implement
