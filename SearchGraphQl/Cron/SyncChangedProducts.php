@@ -13,7 +13,9 @@ use BradSearch\SearchGraphQl\Model\Sync\ChangeFilter;
 use BradSearch\SearchGraphQl\Model\Sync\ChangelogReader;
 use BradSearch\SearchGraphQl\Model\Sync\HeldProducts;
 use BradSearch\SearchGraphQl\Model\Sync\IndexState;
+use BradSearch\SearchGraphQl\Model\Sync\ProductRelations;
 use BradSearch\SearchGraphQl\Model\Sync\ResendProducts;
+use BradSearch\SearchGraphQl\Model\Sync\StockStatusSnapshot;
 use BradSearch\SearchGraphQl\Model\Sync\WebhookNotifier;
 use Magento\Store\Model\StoreManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -77,6 +79,21 @@ class SyncChangedProducts
     private ResendProducts $resendProducts;
 
     /**
+     * @var ChangelogReader
+     */
+    private ChangelogReader $stockChangelogReader;
+
+    /**
+     * @var ProductRelations
+     */
+    private ProductRelations $productRelations;
+
+    /**
+     * @var StockStatusSnapshot
+     */
+    private StockStatusSnapshot $stockStatusSnapshot;
+
+    /**
      * @var int
      */
     private int $maxHoldMinutes;
@@ -92,6 +109,21 @@ class SyncChangedProducts
     private bool $resending = false;
 
     /**
+     * @var int|null This run's stock changelog max version; null when the stock changelog is not read
+     */
+    private ?int $currentStockVersion = null;
+
+    /**
+     * @var bool Whether this run compares stock statuses with the ones last seen
+     */
+    private bool $comparingStockStatus = false;
+
+    /**
+     * @var array<int, true> Products whose stock status changed since the last run
+     */
+    private array $stockStatusChanged = [];
+
+    /**
      * @param ChangelogReader $changelogReader
      * @param WebhookNotifier $webhookNotifier
      * @param SyncStateFactory $syncStateFactory
@@ -102,6 +134,9 @@ class SyncChangedProducts
      * @param IndexState $indexState
      * @param HeldProducts $heldProducts
      * @param ResendProducts $resendProducts
+     * @param ChangelogReader $stockChangelogReader Reads cataloginventory_stock_cl
+     * @param ProductRelations $productRelations
+     * @param StockStatusSnapshot $stockStatusSnapshot
      * @param int $maxHoldMinutes A product held longer than this is sent anyway, with a warning, and sent
      *        again once Magento has indexed it
      */
@@ -116,6 +151,9 @@ class SyncChangedProducts
         IndexState $indexState,
         HeldProducts $heldProducts,
         ResendProducts $resendProducts,
+        ChangelogReader $stockChangelogReader,
+        ProductRelations $productRelations,
+        StockStatusSnapshot $stockStatusSnapshot,
         int $maxHoldMinutes = 15
     ) {
         $this->changelogReader = $changelogReader;
@@ -128,6 +166,9 @@ class SyncChangedProducts
         $this->indexState = $indexState;
         $this->heldProducts = $heldProducts;
         $this->resendProducts = $resendProducts;
+        $this->stockChangelogReader = $stockChangelogReader;
+        $this->productRelations = $productRelations;
+        $this->stockStatusSnapshot = $stockStatusSnapshot;
         $this->maxHoldMinutes = $maxHoldMinutes;
     }
 
@@ -136,6 +177,9 @@ class SyncChangedProducts
      *
      * Piggybacks on ElasticSuite by reading from the same catalogsearch_fulltext_cl
      * changelog table. Syncs products that have changed since our last sync.
+     *
+     * Also reads cataloginventory_stock_cl with its own cursor: a stock item trigger built before
+     * Magento subscribed the search view to the stock table writes only there.
      *
      * @return void
      */
@@ -147,26 +191,26 @@ class SyncChangedProducts
             return;
         }
 
-        // Get current changelog version
+        // Get current changelog version. Magento's hourly cleanup can empty a changelog (version 0), and
+        // held, marked and stock status changes are still handled then.
         $currentVersion = $this->changelogReader->getCurrentVersion();
-        if ($currentVersion === 0) {
-            $this->logger->debug('BradSearch Sync: No changelog entries found');
-            return;
-        }
+        $this->currentStockVersion = $this->stockVersion();
 
         $this->holding = $this->holdingAvailable();
         $this->resending = $this->resendingAvailable();
 
+        $storeIds = [];
+        foreach ($this->storeManager->getStores() as $store) {
+            // Check if sync is enabled for this store
+            if ($this->webhookNotifier->isSyncEnabled((int)$store->getId())) {
+                $storeIds[] = (int)$store->getId();
+            }
+        }
+        $this->noteStockStatusChanges($storeIds);
+
         // Process each store that has sync enabled
         $pending = [];
-        foreach ($this->storeManager->getStores() as $store) {
-            $storeId = (int)$store->getId();
-
-            // Check if sync is enabled for this store
-            if (!$this->webhookNotifier->isSyncEnabled($storeId)) {
-                continue;
-            }
-
+        foreach ($storeIds as $storeId) {
             try {
                 $changes = $this->collectStore($storeId, $currentVersion);
                 if ($changes !== null) {
@@ -184,6 +228,7 @@ class SyncChangedProducts
             return;
         }
 
+        $pending = $this->withParents($pending);
         $waiting = $this->waitingForIndexes($pending);
         $plans = [];
         foreach ($pending as $storeId => $changes) {
@@ -230,14 +275,23 @@ class SyncChangedProducts
     {
         // Get or create sync state for this store
         $syncState = $this->getOrCreateSyncState($storeId, $currentVersion);
+        if ($syncState === null) {
+            return null;
+        }
         $lastVersionId = $syncState->getLastVersionId();
+
+        $lastStockVersionId = $syncState->getLastStockVersionId();
 
         $held = $this->holding ? $this->heldProducts->forStore($storeId) : [];
         $resend = $this->resending ? $this->resendProducts->forStore($storeId) : [];
         $others = array_keys($held + array_fill_keys(array_keys($resend), false));
 
+        $searchNew = $currentVersion > $lastVersionId;
+        $stockNew = $this->currentStockVersion !== null && $lastStockVersionId !== null
+            && $this->currentStockVersion > $lastStockVersionId;
+
         // Check if there are new changes
-        if ($currentVersion <= $lastVersionId) {
+        if (!$searchNew && !$stockNew) {
             $this->logger->debug('BradSearch Sync: No new changes', [
                 'store_id' => $storeId,
                 'last_version' => $lastVersionId,
@@ -247,7 +301,11 @@ class SyncChangedProducts
         }
 
         // Get changed product IDs
-        $productIds = $this->changelogReader->getChangedProductIds($lastVersionId, $currentVersion);
+        $searchIds = $searchNew ? $this->changelogReader->getChangedProductIds($lastVersionId, $currentVersion) : [];
+        $stockIds = $stockNew
+            ? $this->stockChangelogReader->getChangedProductIds($lastStockVersionId, $this->currentStockVersion)
+            : [];
+        $productIds = array_values(array_unique(array_merge($searchIds, $stockIds)));
 
         if (empty($productIds) && empty($others)) {
             // No products in range, but still update version to avoid reprocessing
@@ -259,7 +317,10 @@ class SyncChangedProducts
             'store_id' => $storeId,
             'from_version' => $lastVersionId,
             'to_version' => $currentVersion,
+            'from_stock_version' => $lastStockVersionId,
+            'to_stock_version' => $this->currentStockVersion,
             'product_count' => count($productIds),
+            'stock_count' => count($stockIds),
             'held_count' => count($held),
             'resend_count' => count($resend)
         ]);
@@ -349,6 +410,127 @@ class SyncChangedProducts
     }
 
     /**
+     * Hold, in every store with sync on, the products whose stock status changed since the last run,
+     * then store the statuses read. Held first: a held product is checked through the filter and stays held
+     * until a run has sent it, so a failed notification loses nothing.
+     *
+     * @param int[] $storeIds
+     * @return void
+     */
+    private function noteStockStatusChanges(array $storeIds): void
+    {
+        $this->comparingStockStatus = false;
+        $this->stockStatusChanged = [];
+        if (!$this->holding || empty($storeIds)) {
+            return;
+        }
+
+        try {
+            if (!$this->stockStatusSnapshot->isAvailable()) {
+                $this->logger->error(
+                    'BradSearch Sync: Stock status table missing, stock changes without a changelog row are not seen (run setup:upgrade)'
+                );
+                return;
+            }
+            $rows = $this->stockStatusSnapshot->changes();
+            // The statuses read are saved only once their products are held, so a run that fails from here on
+            // finds the same changes next run.
+            $this->comparingStockStatus = true;
+            if (empty($rows)) {
+                return;
+            }
+
+            $productIds = array_values(array_unique(array_column($rows, 'product_id')));
+            foreach ($storeIds as $storeId) {
+                $this->heldProducts->update($storeId, [], $productIds);
+            }
+            $this->stockStatusSnapshot->save($rows);
+            $this->stockStatusChanged = array_fill_keys($productIds, true);
+
+            $this->logger->info('BradSearch Sync: Stock status changed, checking the products', [
+                'product_count' => count($productIds)
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Stock status check failed', [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * @return int|null The stock changelog's max version; null when it is not read this run
+     */
+    private function stockVersion(): ?int
+    {
+        try {
+            if (!$this->syncStateResource->hasStockCursor()) {
+                $this->logger->error(
+                    'BradSearch Sync: Stock changelog cursor missing, reading stock changes from the search changelog only (run setup:upgrade)'
+                );
+                return null;
+            }
+            // Only a scheduled stock index ("Update by Schedule") has a changelog.
+            if (!$this->stockChangelogReader->isChangelogAvailable()) {
+                return null;
+            }
+
+            // 0 is an empty changelog or a failed read: nothing to read, and the cursor must not start there.
+            $version = $this->stockChangelogReader->getCurrentVersion();
+
+            return $version > 0 ? $version : null;
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Stock changelog check failed, reading the search changelog only', [
+                'error' => $e->getMessage()
+            ]);
+            return null;
+        }
+    }
+
+    /**
+     * Add the bundle, grouped and configurable parents of the changelog products: Magento's stock index
+     * writes a parent's status when it indexes a child's row, with no changelog row for the parent.
+     *
+     * @param array<int, array{0: SyncState, 1: int[], 2: int[], 3: array<int, bool>, 4: array<int, string>}> $pending
+     * @return array<int, array{0: SyncState, 1: int[], 2: int[], 3: array<int, bool>, 4: array<int, string>}>
+     */
+    private function withParents(array $pending): array
+    {
+        $changed = array_values(array_unique(array_merge([], ...array_map(static function (array $changes): array {
+            return $changes[2];
+        }, array_values($pending)))));
+        if (empty($changed)) {
+            return $pending;
+        }
+
+        try {
+            $parents = $this->productRelations->parentsOf($changed);
+        } catch (\Throwable $e) {
+            $this->logger->error('BradSearch Sync: Parent products check failed, sending the changed products only', [
+                'error' => $e->getMessage()
+            ]);
+            return $pending;
+        }
+        if (empty($parents)) {
+            return $pending;
+        }
+
+        foreach ($pending as $storeId => $changes) {
+            $extra = [];
+            foreach ($changes[2] as $productId) {
+                foreach ($parents[$productId] ?? [] as $parentId) {
+                    $extra[] = $parentId;
+                }
+            }
+            if (!empty($extra)) {
+                $pending[$storeId][1] = array_values(array_unique(array_merge($changes[1], $extra)));
+                $pending[$storeId][2] = array_values(array_unique(array_merge($changes[2], $extra)));
+            }
+        }
+
+        return $pending;
+    }
+
+    /**
      * @param array<int, array{0: SyncState, 1: int[], 2: int[], 3: array<int, bool>, 4: array<int, string>}> $pending
      * @return array<int, array<int, true>> store id => product ids Magento has not indexed yet for that store
      */
@@ -364,9 +546,9 @@ class SyncChangedProducts
 
         try {
             $categories = array_fill_keys($this->indexState->notIndexed(IndexState::CATEGORIES, $all), true);
-            $stock = $this->indexState->stockWaitsForIndex()
-                ? array_fill_keys($this->indexState->notIndexed(IndexState::STOCK, $all), true)
-                : [];
+            // The status compare catches the stock index's own writes (a status written after the stock item, a
+            // parent's status written when a child is indexed), so the stock index is waited for only without it.
+            $stock = $this->comparingStockStatus ? [] : $this->waitingForStock($all);
             $ruleWebsites = array_fill_keys($this->indexState->websitesWithPriceRules(), true);
             $rules = empty($ruleWebsites)
                 ? []
@@ -398,6 +580,38 @@ class SyncChangedProducts
     }
 
     /**
+     * A product waits while its own stock row or one of its children's is not indexed: the stock index
+     * writes a bundle's or configurable's status when it indexes the child.
+     *
+     * @param int[] $productIds
+     * @return array<int, true>
+     */
+    private function waitingForStock(array $productIds): array
+    {
+        $children = $this->productRelations->childrenOf($productIds);
+        $pending = array_fill_keys($this->indexState->notIndexed(
+            IndexState::STOCK,
+            array_values(array_unique(array_merge($productIds, ...array_values($children))))
+        ), true);
+
+        $waiting = [];
+        foreach ($productIds as $productId) {
+            if (isset($pending[$productId])) {
+                $waiting[$productId] = true;
+                continue;
+            }
+            foreach ($children[$productId] ?? [] as $childId) {
+                if (isset($pending[$childId])) {
+                    $waiting[$productId] = true;
+                    break;
+                }
+            }
+        }
+
+        return $waiting;
+    }
+
+    /**
      * Decide per product what this run does with it.
      *
      * Not waiting for Magento's index: sent through the filter and no longer held. Waiting: held. Held past
@@ -413,7 +627,9 @@ class SyncChangedProducts
     private function plan(int $storeId, array $changes, array $waiting): array
     {
         [, $productIds, $changelogIds, $held, $resend] = $changes;
-        $changed = array_flip($changelogIds) + $resend;
+        // A held product sent at the limit is sent again only for a new change: a changelog row, a mark or a stock
+        // status that changed with no row.
+        $changed = array_flip($changelogIds) + $resend + $this->stockStatusChanged;
         $overdue = array_flip($this->overdue($storeId, $waiting, $held));
 
         $plan = ['send' => [], 'forced' => [], 'hold' => [], 'release' => [], 'sentAtLimit' => [], 'resend' => $resend];
@@ -576,19 +792,25 @@ class SyncChangedProducts
      *
      * @param int $storeId
      * @param int $currentVersion Current changelog max version
-     * @return SyncState
+     * @return SyncState|null Null for a new store while the changelog reads 0 (empty, or a failed read)
      */
-    private function getOrCreateSyncState(int $storeId, int $currentVersion): SyncState
+    private function getOrCreateSyncState(int $storeId, int $currentVersion): ?SyncState
     {
         /** @var SyncState $syncState */
         $syncState = $this->syncStateFactory->create();
         $this->syncStateResource->loadByStoreId($syncState, $storeId);
 
+        if (!$syncState->getId() && $currentVersion === 0) {
+            return null;
+        }
         if (!$syncState->getId()) {
             // Initialize from current version to skip historical changes
             // Assumes full sync already performed on BradSearch backend
             $syncState->setStoreId($storeId);
             $syncState->setLastVersionId($currentVersion);
+            if ($this->currentStockVersion !== null) {
+                $syncState->setLastStockVersionId($this->currentStockVersion);
+            }
             $syncState->setLastSyncAt((new \DateTimeImmutable())->format('Y-m-d H:i:s'));
 
             // CRITICAL: Save the initial state to database (this was the bug!)
@@ -596,7 +818,18 @@ class SyncChangedProducts
 
             $this->logger->info('BradSearch Sync: Initialized new sync state from current version', [
                 'store_id' => $storeId,
-                'initial_version' => $currentVersion
+                'initial_version' => $currentVersion,
+                'initial_stock_version' => $this->currentStockVersion
+            ]);
+        } elseif ($this->currentStockVersion !== null && $syncState->getLastStockVersionId() === null) {
+            // First run that reads the stock changelog: its earlier rows were before this, like the search
+            // changelog's rows before a store's first run.
+            $syncState->setLastStockVersionId($this->currentStockVersion);
+            $this->syncStateResource->save($syncState);
+
+            $this->logger->info('BradSearch Sync: Started reading the stock changelog', [
+                'store_id' => $storeId,
+                'initial_stock_version' => $this->currentStockVersion
             ]);
         }
 
@@ -614,6 +847,11 @@ class SyncChangedProducts
     {
         // A run that only handles held or marked products must not move the cursor back.
         $syncState->setLastVersionId(max($versionId, (int)$syncState->getLastVersionId()));
+        if ($this->currentStockVersion !== null) {
+            $syncState->setLastStockVersionId(
+                max($this->currentStockVersion, (int)$syncState->getLastStockVersionId())
+            );
+        }
         $syncState->setLastSyncAt((new \DateTimeImmutable())->format('Y-m-d H:i:s'));
         $this->syncStateResource->save($syncState);
     }

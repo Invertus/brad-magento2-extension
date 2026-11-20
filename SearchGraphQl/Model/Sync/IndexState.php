@@ -7,7 +7,6 @@ declare(strict_types=1);
 namespace BradSearch\SearchGraphQl\Model\Sync;
 
 use Magento\Framework\App\ResourceConnection;
-use Magento\Framework\Module\Manager as ModuleManager;
 
 /**
  * Tells which products have a change that one of Magento's scheduled indexes has not processed yet.
@@ -16,6 +15,10 @@ use Magento\Framework\Module\Manager as ModuleManager;
  * index and the stock status from the stock index. The sync job runs in a different cron group than the
  * index job, so a product sent before the index job runs is fetched with its old data, and nothing sends
  * it again.
+ *
+ * The sync waits for the stock index only when it cannot compare stock statuses with the ones it last saw
+ * (`StockStatusSnapshot`): that compare finds a status written after the stock item, and a bundle's or
+ * configurable's status the stock index writes when it indexes a child's row.
  */
 class IndexState
 {
@@ -40,29 +43,11 @@ class IndexState
     private ResourceConnection $resource;
 
     /**
-     * @var ModuleManager
-     */
-    private ModuleManager $moduleManager;
-
-    /**
      * @param ResourceConnection $resource
-     * @param ModuleManager $moduleManager
      */
-    public function __construct(ResourceConnection $resource, ModuleManager $moduleManager)
+    public function __construct(ResourceConnection $resource)
     {
         $this->resource = $resource;
-        $this->moduleManager = $moduleManager;
-    }
-
-    /**
-     * Without Magento's inventory modules a stock save leaves the stock status to the stock index, and
-     * bradProducts reads the status. With them, the save writes the status itself.
-     *
-     * @return bool
-     */
-    public function stockWaitsForIndex(): bool
-    {
-        return !$this->moduleManager->isEnabled('Magento_InventoryCatalog');
     }
 
     /**

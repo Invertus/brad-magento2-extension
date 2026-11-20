@@ -18,6 +18,10 @@ use Psr\Log\LoggerInterface;
  * cursor moved past its changes, but no hash was stored for them), so the product is marked to be sent
  * again. A product already sent at the hold limit is not marked: it has a hash, any new change sends it
  * again, and it is checked again once indexed; marking it would send it on every fetch while it waits.
+ * Both changelogs the sync reads count (search and stock), and a fetched bundle, grouped or configurable
+ * product counts as changed when one of its children has a row: its stock status follows the child's. So
+ * does a fetched product whose stock status differs from the status the sync last saw: some writers
+ * change it with no changelog row.
  *
  * A product the request could not build did not reach BradSearch, so its stored hash is forgotten and
  * its next changelog entry sends it again. It is not marked: a product that keeps failing would then
@@ -28,8 +32,8 @@ class FetchRecorder
     private const SYNC_STATE_TABLE = 'bradsearch_sync_state';
 
     /**
-     * @var array<int, array{0: int, 1: int, 2: int[]|null, 3: int, 4: int|null}> store id, cursor, product ids
-     *      (null for an id range), first id, last id (null: no end)
+     * @var array<int, array{0: int, 1: array{0: int, 1: int|null}, 2: int[]|null, 3: int, 4: int|null}> store id,
+     *      cursors, product ids (null for an id range), first id, last id (null: no end)
      */
     private array $fetches = [];
 
@@ -79,6 +83,26 @@ class FetchRecorder
     private LoggerInterface $logger;
 
     /**
+     * @var ChangelogReader
+     */
+    private ChangelogReader $stockChangelogReader;
+
+    /**
+     * @var ProductRelations
+     */
+    private ProductRelations $productRelations;
+
+    /**
+     * @var StockStatusSnapshot
+     */
+    private StockStatusSnapshot $stockStatusSnapshot;
+
+    /**
+     * @var bool|null
+     */
+    private ?bool $snapshot = null;
+
+    /**
      * @param ResourceConnection $resource
      * @param ChangelogReader $changelogReader
      * @param ResendProducts $resendProducts
@@ -86,6 +110,9 @@ class FetchRecorder
      * @param ChangeFilter $changeFilter
      * @param WebhookNotifier $webhookNotifier
      * @param LoggerInterface $logger
+     * @param ChangelogReader $stockChangelogReader Reads cataloginventory_stock_cl
+     * @param ProductRelations $productRelations
+     * @param StockStatusSnapshot $stockStatusSnapshot
      */
     public function __construct(
         ResourceConnection $resource,
@@ -94,7 +121,10 @@ class FetchRecorder
         HeldProducts $heldProducts,
         ChangeFilter $changeFilter,
         WebhookNotifier $webhookNotifier,
-        LoggerInterface $logger
+        LoggerInterface $logger,
+        ChangelogReader $stockChangelogReader,
+        ProductRelations $productRelations,
+        StockStatusSnapshot $stockStatusSnapshot
     ) {
         $this->resource = $resource;
         $this->changelogReader = $changelogReader;
@@ -103,15 +133,19 @@ class FetchRecorder
         $this->changeFilter = $changeFilter;
         $this->webhookNotifier = $webhookNotifier;
         $this->logger = $logger;
+        $this->stockChangelogReader = $stockChangelogReader;
+        $this->productRelations = $productRelations;
+        $this->stockStatusSnapshot = $stockStatusSnapshot;
     }
 
     /**
      * Read before any product data of the request
      *
      * @param int $storeId
-     * @return int|null The store's sync cursor; null when the store has no live sync to protect
+     * @return array{0: int, 1: int|null}|null The store's search and stock changelog cursors (null for a
+     *         stock changelog the sync does not read yet); null when the store has no live sync to protect
      */
-    public function cursor(int $storeId): ?int
+    public function cursor(int $storeId): ?array
     {
         try {
             if (!$this->webhookNotifier->isSyncEnabled($storeId) || !$this->resendProducts->isAvailable()) {
@@ -119,13 +153,21 @@ class FetchRecorder
             }
 
             $connection = $this->resource->getConnection();
-            $cursor = $connection->fetchOne(
-                $connection->select()
-                    ->from($this->resource->getTableName(self::SYNC_STATE_TABLE), ['last_version_id'])
-                    ->where('store_id = ?', $storeId)
+            $table = $this->resource->getTableName(self::SYNC_STATE_TABLE);
+            $columns = ['last_version_id'];
+            if ($connection->tableColumnExists($table, 'last_stock_version_id')) {
+                $columns[] = 'last_stock_version_id';
+            }
+            $row = $connection->fetchRow(
+                $connection->select()->from($table, $columns)->where('store_id = ?', $storeId)
             );
+            if (!$row || $row['last_version_id'] === null) {
+                return null;
+            }
 
-            return $cursor === false || $cursor === null ? null : (int)$cursor;
+            $stockCursor = $row['last_stock_version_id'] ?? null;
+
+            return [(int)$row['last_version_id'], $stockCursor === null ? null : (int)$stockCursor];
         } catch (\Throwable $e) {
             $this->logger->error('BradSearch Sync: Could not read the sync cursor for a fetch', [
                 'store_id' => $storeId,
@@ -140,11 +182,11 @@ class FetchRecorder
      * named ones count whether or not they were returned.
      *
      * @param int $storeId
-     * @param int|null $cursor From cursor(), read before the products were loaded
+     * @param array{0: int, 1: int|null}|null $cursor From cursor(), read before the products were loaded
      * @param int[] $productIds
      * @return void
      */
-    public function record(int $storeId, ?int $cursor, array $productIds): void
+    public function record(int $storeId, ?array $cursor, array $productIds): void
     {
         if ($cursor === null || empty($productIds)) {
             return;
@@ -158,12 +200,12 @@ class FetchRecorder
      * page stands for counts: from the previous page's last product to this page's last one.
      *
      * @param int $storeId
-     * @param int|null $cursor From cursor(), read before the products were loaded
+     * @param array{0: int, 1: int|null}|null $cursor From cursor(), read before the products were loaded
      * @param int $fromId
      * @param int|null $toId Null for the last page
      * @return void
      */
-    public function recordRange(int $storeId, ?int $cursor, int $fromId, ?int $toId): void
+    public function recordRange(int $storeId, ?array $cursor, int $fromId, ?int $toId): void
     {
         if ($cursor === null) {
             return;
@@ -213,9 +255,10 @@ class FetchRecorder
 
         foreach ($fetches as [$storeId, $cursor, $productIds, $fromId, $toId]) {
             try {
-                $changed = $productIds === null
-                    ? $this->changelogReader->getProductsChangedAfterInRange($cursor, $fromId, $toId)
-                    : $this->changelogReader->getProductsChangedAfter($cursor, $productIds);
+                $changed = array_merge(
+                    $this->changedAfter($cursor, $productIds, $fromId, $toId),
+                    $this->parentsWithChangedChildren($cursor, $productIds, $fromId, $toId)
+                );
                 if ($this->holdingAvailable()) {
                     $changed = array_values(array_unique(array_merge(
                         $changed,
@@ -238,6 +281,81 @@ class FetchRecorder
                 ]);
             }
         }
+    }
+
+    /**
+     * @param array{0: int, 1: int|null} $cursor
+     * @param int[]|null $productIds Null for the id range
+     * @param int $fromId
+     * @param int|null $toId
+     * @return int[] Products with a row after the cursor in the search or the stock changelog, or a stock
+     *         status the sync has not seen
+     */
+    private function changedAfter(array $cursor, ?array $productIds, int $fromId, ?int $toId): array
+    {
+        [$searchCursor, $stockCursor] = $cursor;
+        $changed = $productIds === null
+            ? $this->changelogReader->getProductsChangedAfterInRange($searchCursor, $fromId, $toId)
+            : $this->changelogReader->getProductsChangedAfter($searchCursor, $productIds);
+        if ($stockCursor !== null) {
+            $changed = array_merge($changed, $productIds === null
+                ? $this->stockChangelogReader->getProductsChangedAfterInRange($stockCursor, $fromId, $toId)
+                : $this->stockChangelogReader->getProductsChangedAfter($stockCursor, $productIds));
+        }
+        if ($this->snapshotAvailable()) {
+            $changed = array_merge($changed, $this->stockStatusSnapshot->changedAmong($productIds, $fromId, $toId));
+        }
+
+        return $changed;
+    }
+
+    /**
+     * A child's change can change its parent's data (a bundle's stock status) with no row for the parent.
+     *
+     * @param array{0: int, 1: int|null} $cursor
+     * @param int[]|null $productIds Null for the id range
+     * @param int $fromId
+     * @param int|null $toId
+     * @return int[] Fetched parents with a child changed after the cursor
+     */
+    private function parentsWithChangedChildren(array $cursor, ?array $productIds, int $fromId, ?int $toId): array
+    {
+        $children = $productIds === null
+            ? $this->productRelations->childrenInRange($fromId, $toId)
+            : $this->productRelations->childrenOf($productIds);
+        if (empty($children)) {
+            return [];
+        }
+
+        $changed = array_fill_keys($this->changedAfter(
+            $cursor,
+            array_values(array_unique(array_merge([], ...array_values($children)))),
+            0,
+            null
+        ), true);
+        $parents = [];
+        foreach ($children as $parentId => $childIds) {
+            foreach ($childIds as $childId) {
+                if (isset($changed[$childId])) {
+                    $parents[] = $parentId;
+                    break;
+                }
+            }
+        }
+
+        return $parents;
+    }
+
+    /**
+     * @return bool False until setup:upgrade has created the stock status table
+     */
+    private function snapshotAvailable(): bool
+    {
+        if ($this->snapshot === null) {
+            $this->snapshot = $this->stockStatusSnapshot->isAvailable();
+        }
+
+        return $this->snapshot;
     }
 
     /**

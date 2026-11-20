@@ -10,6 +10,7 @@
         <column xsi:type="int" name="id" unsigned="true" nullable="false" identity="true" comment="ID"/>
         <column xsi:type="int" name="store_id" unsigned="true" nullable="false" comment="Store ID"/>
         <column xsi:type="bigint" name="last_version_id" unsigned="true" nullable="false" default="0" comment="Last Processed Changelog Version ID"/>
+        <column xsi:type="bigint" name="last_stock_version_id" unsigned="true" nullable="true" comment="Last Processed Stock Changelog Version ID, null until first read"/>
         <column xsi:type="timestamp" name="last_sync_at" on_update="false" nullable="true" comment="Last Sync Timestamp"/>
         <column xsi:type="timestamp" name="created_at" on_update="false" nullable="false" default="CURRENT_TIMESTAMP" comment="Created At"/>
         <column xsi:type="timestamp" name="updated_at" on_update="true" nullable="false" default="CURRENT_TIMESTAMP" comment="Updated At"/>
@@ -50,6 +51,15 @@
         <constraint xsi:type="primary" referenceId="PRIMARY">
             <column name="store_id"/>
             <column name="product_id"/>
+        </constraint>
+    </table>
+    <table name="bradsearch_stock_status" resource="default" engine="innodb" comment="BradSearch Stock Status Last Seen By The Sync">
+        <column xsi:type="int" name="product_id" unsigned="true" nullable="false" comment="Product ID"/>
+        <column xsi:type="smallint" name="website_id" unsigned="true" nullable="false" comment="Website ID"/>
+        <column xsi:type="smallint" name="stock_status" unsigned="true" nullable="false" comment="Stock Status"/>
+        <constraint xsi:type="primary" referenceId="PRIMARY">
+            <column name="product_id"/>
+            <column name="website_id"/>
         </constraint>
     </table>
 </schema>
