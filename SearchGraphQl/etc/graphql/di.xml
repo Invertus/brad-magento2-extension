@@ -14,5 +14,7 @@
             </argument>
         </arguments>
     </type>
-
+    <type name="Magento\GraphQl\Controller\GraphQl">
+        <plugin name="bradsearch_flush_fetch_records" type="BradSearch\SearchGraphQl\Plugin\GraphQl\FlushFetchRecords"/>
+    </type>
 </config>

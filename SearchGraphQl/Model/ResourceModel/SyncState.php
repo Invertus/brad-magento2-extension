@@ -50,4 +50,14 @@ class SyncState extends AbstractDb
 
         return $this;
     }
+
+    /**
+     * False until setup:upgrade has added the stock changelog cursor
+     *
+     * @return bool
+     */
+    public function hasStockCursor(): bool
+    {
+        return $this->getConnection()->tableColumnExists($this->getMainTable(), 'last_stock_version_id');
+    }
 }
