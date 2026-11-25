@@ -55,7 +55,7 @@ class FeatureDefinitions implements ResolverInterface
     /**
      * @inheritdoc
      */
-    public function resolve(Field $field, $context, ResolveInfo $info, array $value = null, array $args = null)
+    public function resolve(Field $field, $context, ResolveInfo $info, ?array $value = null, ?array $args = null)
     {
         $storeId = (int)$context->getExtensionAttributes()->getStore()->getId();
 
