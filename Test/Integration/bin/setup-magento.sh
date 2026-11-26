@@ -46,6 +46,7 @@ if ! mysql -hdb -umagento -pmagento magento -e 'SELECT 1 FROM core_config_data L
 
     step "seed products"
     php /extension/Test/Integration/bin/seed-products.php
+    php /extension/Test/Integration/bin/seed-contract-product.php
 
     step "indexers: update by schedule, full reindex"
     # The sync reads the changelogs, which exist only for indexers on schedule (as in production).
@@ -55,6 +56,11 @@ else
     # Already installed (a local re-run): apply the checkout's current schema, DI, cron and GraphQL files.
     step "setup:upgrade"
     bin/magento setup:upgrade --keep-generated --no-interaction
+
+    # The contract seed is newer than some local installs; it is safe to run again.
+    step "seed contract product"
+    php /extension/Test/Integration/bin/seed-contract-product.php
+    bin/magento indexer:reindex catalog_category_product catalog_product_category catalog_product_attribute
 fi
 
 bin/magento cache:flush

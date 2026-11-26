@@ -1,0 +1,42 @@
+name: Contract fixtures
+
+# The canonical contract fixtures live in brad-search-php-sdk; this repo keeps a copy. Compared only
+# for main, because the SDK's main is the contract for main: a release branch keeps the copy it was cut with.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract-fixtures:
+    name: Contract fixtures match the SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Diff the contract fixtures against brad-search-php-sdk main
+        env:
+          TARGET: ${{ github.base_ref || github.ref_name }}
+        run: |
+          if [ "$TARGET" != "main" ]; then
+            echo "::notice::Skipped: the fixtures are compared with the SDK only for main, this run is for $TARGET"
+            exit 0
+          fi
+          status=0
+          for file in products health; do
+            url="https://raw.githubusercontent.com/Invertus/brad-search-php-sdk/main/tests/fixtures/platform-contracts/magento/$file.json"
+            if ! curl -fsSL --retry 3 "$url" -o "$RUNNER_TEMP/sdk-$file.json"; then
+              echo "::error::cannot fetch $url"
+              status=1
+              continue
+            fi
+            diff -u "$RUNNER_TEMP/sdk-$file.json" "Test/Integration/fixtures/contract/$file.json" || { echo "::error file=Test/Integration/fixtures/contract/$file.json::differs from the SDK's copy on main"; status=1; }
+          done
+          # To resync: copy the SDK's tests/fixtures/platform-contracts/magento/*.json here unchanged.
+          exit $status

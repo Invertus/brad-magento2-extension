@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <files psalm-version="6.4.1@09a200c15910905ddc49e5edd37b73f9c78f7580">
+  <file src="Analytics/Model/OrderEvents/Outbox.php">
+    <TooManyArguments>
+      <code><![CDATA[insertArray]]></code>
+    </TooManyArguments>
+  </file>
   <file src="Analytics/Model/OrderEvents/OutboxSender.php">
-    <InvalidArgument>
-      <code><![CDATA[CURLOPT_CONNECTTIMEOUT]]></code>
-      <code><![CDATA[CURLOPT_TIMEOUT]]></code>
-    </InvalidArgument>
+    <UndefinedClass>
+      <code><![CDATA[$this->curlFactory]]></code>
+      <code><![CDATA[CurlFactory]]></code>
+      <code><![CDATA[CurlFactory]]></code>
+    </UndefinedClass>
   </file>
   <file src="ProductFeatures/Model/ProductDataLoader.php">
     <InvalidPropertyAssignmentValue>
@@ -71,6 +77,10 @@
     </InvalidPropertyAssignmentValue>
   </file>
   <file src="SearchGraphQl/Cron/SyncChangedProducts.php">
+    <RedundantCast>
+      <code><![CDATA[(int)$syncState->getLastVersionId()]]></code>
+      <code><![CDATA[(int)$syncState->getStoreId()]]></code>
+    </RedundantCast>
     <UndefinedClass>
       <code><![CDATA[$this->syncStateFactory]]></code>
       <code><![CDATA[SyncStateFactory]]></code>
@@ -128,6 +138,16 @@
       <code><![CDATA[getExtensionAttributes]]></code>
     </UndefinedInterfaceMethod>
   </file>
+  <file src="SearchGraphQl/Model/Sync/ChangeFilter.php">
+    <InvalidArgument>
+      <code><![CDATA[$ruleDates]]></code>
+    </InvalidArgument>
+  </file>
+  <file src="SearchGraphQl/Model/Sync/ProductStateHasher.php">
+    <FalsableReturnStatement>
+      <code><![CDATA[hash('sha256', json_encode($data, JSON_THROW_ON_ERROR))]]></code>
+    </FalsableReturnStatement>
+  </file>
   <file src="SearchGraphQl/Model/Sync/WebhookNotifier.php">
     <InvalidArgument>
       <code><![CDATA[CURLOPT_CONNECTTIMEOUT]]></code>
@@ -136,6 +156,9 @@
     </InvalidArgument>
   </file>
   <file src="SearchGraphQl/Plugin/CatalogGraphQl/Model/Resolver/Aggregations.php">
+    <RedundantCast>
+      <code><![CDATA[(string)$info->operation->name->value]]></code>
+    </RedundantCast>
     <RedundantCondition>
       <code><![CDATA[$info->operation !== null]]></code>
       <code><![CDATA[$info->operation->name !== null]]></code>
@@ -190,5 +213,10 @@
             $info->operation->name !== null &&
             isset($info->operation->name->value)]]></code>
     </RedundantCondition>
+  </file>
+  <file src="SearchGraphQl/Plugin/GraphQl/FlushFetchRecords.php">
+    <UndefinedClass>
+      <code><![CDATA[GraphQl]]></code>
+    </UndefinedClass>
   </file>
 </files>
