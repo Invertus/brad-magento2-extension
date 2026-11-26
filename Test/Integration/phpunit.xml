@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Runs inside the magento container with Magento's PHPUnit; see run.sh. -->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="/var/www/html/vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/IntegrationTestCase.php"
+         cacheResult="false"
+         colors="true">
+    <testsuites>
+        <testsuite name="Integration">
+            <directory>tests</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="MAGENTO_URL" value="http://localhost:8080"/>
+        <env name="WIREMOCK_URL" value="http://wiremock:8080"/>
+    </php>
+</phpunit>

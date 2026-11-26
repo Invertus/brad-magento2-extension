@@ -1,0 +1,52 @@
+name: Integration Tests
+
+# Runs on every PR for now so the run time is measured on CI; whether it stays a PR check or moves to a
+# nightly schedule is decided from that number (BRD-1643 AC-4).
+on:
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration-tests:
+    name: Integration Tests - Magento 2.4.8-p5
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # The checkout is mounted into a container that runs the PR's code: keep the token out of .git/config.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Magento's packages come from the Mage-OS mirror (no repo.magento.com keys), at the versions in
+      # Test/Integration/magento/composer.lock. The cache keeps the downloaded archives, so composer only
+      # unpacks them. The container runs as uid 1000, hence the chmod.
+      - name: Cache composer packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/integration-composer
+          key: integration-composer-${{ hashFiles('Test/Integration/magento/composer.lock') }}
+          restore-keys: integration-composer-
+
+      - name: Make the composer cache writable for the container
+        run: mkdir -p ~/.cache/integration-composer && chmod -R a+rwX ~/.cache/integration-composer
+
+      - name: Run integration tests
+        run: COMPOSER_CACHE_HOST_DIR="$HOME/.cache/integration-composer" Test/Integration/run.sh
+
+      - name: Magento and container logs
+        if: failure()
+        working-directory: Test/Integration
+        run: |
+          docker compose exec -T magento sh -c 'tail -n 200 var/log/*.log' || true
+          docker compose logs --tail 100 || true
