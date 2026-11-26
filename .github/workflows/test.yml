@@ -55,13 +55,19 @@ jobs:
       - name: Run unit tests
         run: vendor/bin/phpunit
 
-      # brad-app's Magento adapter tests read the same fixtures from the SDK; a difference means
-      # one side changed the contract without the other.
-      - name: Contract fixtures match the SDK
-        env:
-          SDK_CONTRACT_REF: main
+  # brad-app's Magento adapter tests read the same products and health fixtures. The canonical
+  # copy is in brad-search-php-sdk; this repo's copy must match it. A separate job, so the unit
+  # tests still report on their own when only the copies differ.
+  contract-fixtures:
+    name: Contract fixtures match the SDK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Diff the contract fixtures against brad-search-php-sdk main
         run: |
           for file in products health; do
-            curl -fsSL "https://raw.githubusercontent.com/Invertus/brad-search-php-sdk/${SDK_CONTRACT_REF}/tests/fixtures/platform-contracts/magento/${file}.json" -o "/tmp/sdk-${file}.json"
+            curl -fsSL "https://raw.githubusercontent.com/Invertus/brad-search-php-sdk/main/tests/fixtures/platform-contracts/magento/${file}.json" -o "/tmp/sdk-${file}.json"
             diff -u "/tmp/sdk-${file}.json" "SearchGraphQl/Test/Unit/_files/contract/${file}.json"
           done
