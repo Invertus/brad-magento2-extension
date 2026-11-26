@@ -46,6 +46,7 @@ if ! mysql -hdb -umagento -pmagento magento -e 'SELECT 1 FROM core_config_data L
 
     step "seed products"
     php /extension/Test/Integration/bin/seed-products.php
+    php /extension/Test/Integration/bin/seed-contract-product.php
 
     step "indexers: update by schedule, full reindex"
     # The sync reads the changelogs, which exist only for indexers on schedule (as in production).
