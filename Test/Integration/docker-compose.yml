@@ -1,10 +1,10 @@
 # A real Magento (Mage-OS mirror packages) with the extension installed, plus a fake BradSearch.
-# Started by run.sh; see README.md.
+# Started by run.sh; see README.md. Images are pinned by digest, so a re-pushed tag changes nothing.
 name: bradsearch-integration
 
 services:
   magento:
-    image: markoshust/magento-php:8.3-fpm-8
+    image: markoshust/magento-php:8.3-fpm-8@sha256:1bbe8ffc9613e891ad2f2018bfa16a936a3018a0856981714f3c9ed25d288d76
     # Kept alive for `docker compose exec`; run.sh installs Magento, then starts PHP's web server.
     command: ["sleep", "infinity"]
     working_dir: /var/www/html
@@ -23,7 +23,7 @@ services:
         condition: service_started
 
   db:
-    image: mariadb:11.4
+    image: mariadb:11.4@sha256:a8992b5e5404d11e03c54a31d0c1bdea3fd116d283aa6d1a627551f29045309b
     environment:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: magento
@@ -38,7 +38,7 @@ services:
       retries: 60
 
   opensearch:
-    image: opensearchproject/opensearch:2.19.2
+    image: opensearchproject/opensearch:2.19.2@sha256:69588c664014fa3d3260ed5dd337f8538fec94790dad00bfbe92301eaaaac240
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
@@ -52,7 +52,7 @@ services:
 
   # Stands in for BradSearch: the search API and the sync webhook. Tests stub it and read its request journal.
   wiremock:
-    image: wiremock/wiremock:3.13.2
+    image: wiremock/wiremock:3.13.2@sha256:0d4ecb3e4dc8213fd7a4d37d6a78f6e6b553a6d2e15bd51b0999781282ac61b3
     command: ["--disable-banner"]
 
 volumes:

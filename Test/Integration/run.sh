@@ -10,12 +10,17 @@ compose up -d --wait
 compose exec -T magento bash /extension/Test/Integration/bin/setup-magento.sh
 
 # PHP's own web server is enough for GraphQL; Magento ships a router for it.
-if ! compose exec -T magento curl -fs -o /dev/null http://localhost:8080/graphql?query=%7BstoreConfig%7Bstore_code%7D%7D; then
+ready() { compose exec -T magento curl -fs -o /dev/null 'http://localhost:8080/graphql?query=%7BstoreConfig%7Bstore_code%7D%7D'; }
+if ! ready; then
     compose exec -T -d magento php -S 0.0.0.0:8080 -t pub phpserver/router.php
     for _ in $(seq 1 30); do
-        compose exec -T magento curl -fs -o /dev/null http://localhost:8080/graphql?query=%7BstoreConfig%7Bstore_code%7D%7D && break
+        ready && break
         sleep 1
     done
+    if ! ready; then
+        echo "web server did not start" >&2
+        exit 1
+    fi
 fi
 
 compose exec -T magento vendor/bin/phpunit -c /extension/Test/Integration/phpunit.xml "$@"

@@ -1,32 +1,21 @@
 #!/usr/bin/env bash
 # Runs inside the magento container: installs Magento with the extension, seeds a few products and
-# points the extension at WireMock. Each step is skipped when already done, so a re-run is quick.
+# points the extension at WireMock. Install steps are skipped when done; a re-run applies the checkout's
+# current module files with setup:upgrade.
 set -euo pipefail
 
-MAGENTO_VERSION="${MAGENTO_VERSION:-2.4.8-p5}"
 MAGENTO_ROOT=/var/www/html
+PROJECT=/extension/Test/Integration/magento
 cd "$MAGENTO_ROOT"
 
 step() { echo "==> $*"; }
 
-if [ ! -f vendor/autoload.php ]; then
-    step "composer: magento/project-community-edition $MAGENTO_VERSION from the Mage-OS mirror"
-    composer create-project --no-interaction --no-progress --no-install \
-        --repository-url=https://mirror.mage-os.org/ \
-        "magento/project-community-edition=$MAGENTO_VERSION" .
-    # repo.magento.com needs account keys; the Mage-OS mirror serves the same magento/* packages without.
-    # The extension comes from the mounted checkout. Of the project's dev tools only PHPUnit is needed.
-    php -r '
-        $c = json_decode(file_get_contents("composer.json"), true);
-        $c["repositories"] = [
-            ["type" => "path", "url" => "/extension", "options" => ["symlink" => true]],
-            ["type" => "composer", "url" => "https://mirror.mage-os.org/"],
-        ];
-        $c["require"]["bradsearch/magento-extension"] = "*@dev";
-        $c["require-dev"] = ["phpunit/phpunit" => "^10.5"];
-        file_put_contents("composer.json", json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n");
-    '
-    composer update --no-interaction --no-progress --prefer-dist
+# magento/project-community-edition 2.4.8-p5 with the locked versions: packages from the Mage-OS mirror
+# (repo.magento.com needs account keys), the extension from the mounted checkout. See README.md to update.
+if [ ! -f vendor/autoload.php ] || ! cmp -s composer.lock "$PROJECT/composer.lock"; then
+    step "composer install (Magento 2.4.8-p5 from the Mage-OS mirror)"
+    cp "$PROJECT/composer.json" "$PROJECT/composer.lock" .
+    composer install --no-interaction --no-progress --prefer-dist
 fi
 
 if ! mysql -hdb -umagento -pmagento magento -e 'SELECT 1 FROM core_config_data LIMIT 1' >/dev/null 2>&1; then
@@ -62,7 +51,12 @@ if ! mysql -hdb -umagento -pmagento magento -e 'SELECT 1 FROM core_config_data L
     # The sync reads the changelogs, which exist only for indexers on schedule (as in production).
     bin/magento indexer:set-mode schedule
     bin/magento indexer:reindex
-    bin/magento cache:flush
+else
+    # Already installed (a local re-run): apply the checkout's current schema, DI, cron and GraphQL files.
+    step "setup:upgrade"
+    bin/magento setup:upgrade --keep-generated --no-interaction
 fi
+
+bin/magento cache:flush
 
 step "Magento is ready"
