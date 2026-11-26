@@ -1,0 +1,60 @@
+# A real Magento (Mage-OS mirror packages) with the extension installed, plus a fake BradSearch.
+# Started by run.sh; see README.md.
+name: bradsearch-integration
+
+services:
+  magento:
+    image: markoshust/magento-php:8.3-fpm-8
+    # Kept alive for `docker compose exec`; run.sh installs Magento, then starts PHP's web server.
+    command: ["sleep", "infinity"]
+    working_dir: /var/www/html
+    environment:
+      COMPOSER_CACHE_DIR: /composer-cache
+    volumes:
+      - ../..:/extension:ro
+      - magento:/var/www/html
+      - ${COMPOSER_CACHE_HOST_DIR:-composer-cache}:/composer-cache
+    depends_on:
+      db:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      wiremock:
+        condition: service_started
+
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: magento
+      MARIADB_USER: magento
+      MARIADB_PASSWORD: magento
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.2
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health?wait_for_status=yellow"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+
+  # Stands in for BradSearch: the search API and the sync webhook. Tests stub it and read its request journal.
+  wiremock:
+    image: wiremock/wiremock:3.13.2
+    command: ["--disable-banner"]
+
+volumes:
+  magento:
+  composer-cache:
