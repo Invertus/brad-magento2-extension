@@ -14,6 +14,7 @@ use BradSearch\SearchGraphQl\Model\Data\Money;
 use BradSearch\SearchGraphQl\Model\Data\PriceTuple;
 use BradSearch\SearchGraphQl\Model\Price\CalculatedPriceMapper;
 use BradSearch\SearchGraphQl\Model\Resolver\BradProducts;
+use BradSearch\SearchGraphQl\Model\Sync\FetchRecorder;
 use Magento\Catalog\Model\Product;
 use Magento\Catalog\Model\ResourceModel\Product\Collection;
 use Magento\Catalog\Model\ResourceModel\Product\CollectionFactory;
@@ -100,7 +101,8 @@ class BradProductsContractTest extends TestCase
             $storeManager,
             $priceCalculator,
             new CalculatedPriceMapper(),
-            $this->createStub(LoggerInterface::class)
+            $this->createStub(LoggerInterface::class),
+            $this->createStub(FetchRecorder::class)
         );
 
         return $resolver->resolve(
