@@ -55,7 +55,7 @@ The tests run in the magento container with Magento's PHPUnit.
 | `BradProductsTest` | `bradProducts` returns the seeded products with the private API key, and refuses a missing or wrong key |
 | `UpdateConfigTest` | `bradUpdateConfig` stores a value for the store view, refuses a request without the key and a path outside its list |
 | `ProductSearchTest` | A `ProductSearch` operation returns the products and order WireMock gives, with the request's correlation id; another operation name is answered by Magento (OpenSearch) and does not call BradSearch |
-| `BradProductsContractTest` | The answer to the exact products query brad-app sends has the shape of the shared contract fixture (`fixtures/contract/products.json`, a copy of the brad-search-php-sdk one). `bin/seed-contract-product.php` gives one product a category, descriptions and a custom attribute so every field has a value |
+| `BradProductsContractTest` | The answer to the exact products query and variables brad-app sends has the shape of the shared contract fixture (`fixtures/contract/products.json`, a copy of the brad-search-php-sdk one, whose `MagentoContractFixtureTest` ties it to the SDK's query). `bin/seed-contract-product.php` gives one product a category, descriptions and a custom attribute, and the test checks they come back |
 | `SyncCronTest` | After a product changes, the `bradsearch_sync_changed_products` job (run as Magento's cron runs it, from `crontab.xml`) posts the product id to the webhook once |
 
 Not covered: the ElasticSuite resolver. `di.xml` attaches the same plugin to it when ElasticSuite is

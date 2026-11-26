@@ -56,6 +56,11 @@ else
     # Already installed (a local re-run): apply the checkout's current schema, DI, cron and GraphQL files.
     step "setup:upgrade"
     bin/magento setup:upgrade --keep-generated --no-interaction
+
+    # The contract seed is newer than some local installs; it is safe to run again.
+    step "seed contract product"
+    php /extension/Test/Integration/bin/seed-contract-product.php
+    bin/magento indexer:reindex catalog_category_product catalog_product_category catalog_product_attribute
 fi
 
 bin/magento cache:flush

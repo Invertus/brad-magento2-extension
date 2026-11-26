@@ -1,11 +1,11 @@
 {
   "data": {
     "bradProducts": {
-      "total_count": 2,
+      "total_count": 3,
       "skipped_count": 0,
       "page_info": {
         "current_page": 0,
-        "page_size": 2,
+        "page_size": 3,
         "total_pages": 1
       },
       "items": [
@@ -140,6 +140,42 @@
           "stock_status": "IN_STOCK",
           "sort_popularity": "I456INUL",
           "sort_popularity_sales": 456
+        },
+        {
+          "id": 103,
+          "sku": "MB-103",
+          "name": "Spare Drill Bit",
+          "full_url": "https://magento.example.com/spare-drill-bit.html",
+          "is_in_stock": true,
+          "allows_backorders": false,
+          "short_description": {
+            "html": ""
+          },
+          "description": {
+            "html": ""
+          },
+          "attributes": [],
+          "image_optimized": "https://magento.example.com/static/version1/graphql/_view/en_US/Magento_Catalog/images/product/placeholder/image.jpg?auto=webp&format=pjpg&width=840&height=375&fit=cover",
+          "calculated_price": {
+            "minimum_price": {
+              "regular_price": {
+                "value": 4.5,
+                "currency": "EUR"
+              },
+              "final_price": {
+                "value": 4.5,
+                "currency": "EUR"
+              },
+              "final_price_excl_tax": {
+                "value": 3.72,
+                "currency": "EUR"
+              }
+            }
+          },
+          "categories": [],
+          "stock_status": "IN_STOCK",
+          "sort_popularity": "O999N999",
+          "sort_popularity_sales": 999
         }
       ]
     }

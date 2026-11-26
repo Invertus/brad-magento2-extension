@@ -14,9 +14,10 @@ namespace BradSearch\Test\Integration;
  * descriptions and a custom attribute, so every field has a value.
  *
  * Only the shape is compared: every key of the fixture must be in the answer with the same JSON type;
- * list elements are held to the union of the fixture's elements. Null is accepted only for a key the
- * fixture has null somewhere, an empty list only for a key the fixture has empty somewhere. Extra keys
- * are allowed: brad-app ignores new fields, but a removed, renamed or retyped one breaks it.
+ * list elements are held to the union of the fixture's elements. Null is accepted only at a path
+ * (list indexes dropped) where the fixture has null, an empty list only at a path where the fixture has
+ * one empty (its MB-103 is a product with no category, attributes or descriptions). Extra keys are
+ * allowed: brad-app ignores new fields, but a removed, renamed or retyped one breaks it.
  *
  * The health check brad-app sends is Magento core's storeConfig query, not extension code, so
  * fixtures/contract/health.json is only kept in step with the SDK.
@@ -24,9 +25,11 @@ namespace BradSearch\Test\Integration;
 class BradProductsContractTest extends IntegrationTestCase
 {
     /**
-     * brad-app's products query: MagentoApi::getProducts() sends brad-search-php-sdk's
-     * MagentoProductQuery::getDefaultQuery() (SDK v4.23.0) with `skipped_count` added after
-     * `total_count` (MagentoApi::withSkippedCount()). Copy it again from there when brad-app changes it.
+     * brad-app's products query, copied: it must equal brad-search-php-sdk's
+     * MagentoProductQuery::getDefaultQuery() with `skipped_count` added after `total_count` by brad-app's
+     * MagentoApi::withSkippedCount(). The SDK's tests/Magento/MagentoContractFixtureTest.php fails when
+     * getDefaultQuery() and the fixture disagree, so a query change arrives here as a fixture change
+     * (the contract-fixtures diff); copy the new query from the SDK then.
      */
     private const BRAD_APP_PRODUCTS_QUERY = <<<'GRAPHQL'
 query GetProducts($filter: BradProductFilterInput, $pageSize: Int, $currentPage: Int) {
@@ -92,14 +95,21 @@ GRAPHQL;
 
     public function testTheAnswerToBradAppsProductsQueryMatchesTheContract(): void
     {
+        // The variables brad-app sends for a page: MagentoApi::getProducts($limit, $offset).
         $response = $this->graphQl(
             self::BRAD_APP_PRODUCTS_QUERY,
-            ['filter' => ['entity_id' => ['in' => [(string)$this->productId('BRAD-IT-ALPHA')]]], 'pageSize' => 50, 'currentPage' => 0],
+            ['pageSize' => 50, 'currentPage' => 0],
             ['X-BradSearch-Api-Key' => self::PRIVATE_API_KEY, 'Store' => 'default']
         );
 
         $this->assertNoGraphQlErrors($response);
-        $this->assertSame(['BRAD-IT-ALPHA'], array_column($response['data']['bradProducts']['items'], 'sku'));
+        $skus = array_column($response['data']['bradProducts']['items'], 'sku');
+        sort($skus);
+        $this->assertSame(self::SEEDED_SKUS, $skus);
+        // The fixture allows empty lists (MB-103); the product the seed filled must still come back filled.
+        $alpha = array_values(array_filter($response['data']['bradProducts']['items'], fn ($item) => $item['sku'] === 'BRAD-IT-ALPHA'))[0];
+        $this->assertNotEmpty($alpha['attributes'], 'BRAD-IT-ALPHA has brad_material but no attributes came back');
+        $this->assertNotEmpty($alpha['categories'], 'BRAD-IT-ALPHA is in a category but no categories came back');
 
         $fixture = json_decode((string)file_get_contents(dirname(__DIR__) . '/fixtures/contract/products.json'), true);
         $this->nullableKeys = $this->keysHolding($fixture, null);
@@ -113,7 +123,7 @@ GRAPHQL;
      */
     private function assertMatchesShape($expected, $actual, string $path = '$'): void
     {
-        $key = (string)preg_replace('/^.*\./', '', $path);
+        $key = $this->pathKey($path);
 
         if ($actual === null) {
             $this->assertTrue($expected === null || in_array($key, $this->nullableKeys, true), "$path is null");
@@ -177,22 +187,27 @@ GRAPHQL;
     /**
      * @param mixed $document
      * @param mixed $needle null or []
-     * @return string[] keys that hold $needle somewhere in the document
+     * @return string[] paths (list indexes dropped, see pathKey()) that hold $needle somewhere in the document
      */
-    private function keysHolding($document, $needle, string $key = ''): array
+    private function keysHolding($document, $needle, string $path = '$'): array
     {
         if ($document === $needle) {
-            return [$key];
+            return [$this->pathKey($path)];
         }
         if (!is_array($document)) {
             return [];
         }
         $keys = [];
         foreach ($document as $name => $value) {
-            $keys = array_merge($keys, $this->keysHolding($value, $needle, is_int($name) ? $key : (string)$name));
+            $keys = array_merge($keys, $this->keysHolding($value, $needle, is_int($name) ? "{$path}[{$name}]" : "$path.$name"));
         }
 
         return $keys;
+    }
+
+    private function pathKey(string $path): string
+    {
+        return (string)preg_replace('/\[\d+\]/', '[]', $path);
     }
 
     /**
