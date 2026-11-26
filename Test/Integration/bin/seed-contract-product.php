@@ -11,7 +11,9 @@ use Magento\Catalog\Api\CategoryRepositoryInterface;
 use Magento\Catalog\Api\Data\CategoryInterfaceFactory;
 use Magento\Catalog\Api\ProductRepositoryInterface;
 use Magento\Catalog\Model\Product;
+use Magento\Catalog\Model\Product\Action as ProductAction;
 use Magento\Catalog\Model\ResourceModel\Category\CollectionFactory as CategoryCollectionFactory;
+use Magento\Eav\Model\Config as EavConfig;
 use Magento\Eav\Setup\EavSetupFactory;
 use Magento\Framework\App\Area;
 use Magento\Framework\App\Bootstrap;
@@ -41,6 +43,8 @@ if (!$eavSetup->getAttributeId(Product::ENTITY, 'brad_material')) {
         'group' => 'General',
         'attribute_set' => 'Default',
     ]);
+    // This process cached the attribute list before the attribute existed.
+    $objectManager->get(EavConfig::class)->clear();
     echo "Created attribute brad_material\n";
 }
 
@@ -60,9 +64,9 @@ if (!$category->getId()) {
 
 $repository = $objectManager->get(ProductRepositoryInterface::class);
 $product = $repository->get('BRAD-IT-ALPHA', true, Store::DEFAULT_STORE_ID, true);
-$product->setCustomAttribute('brad_material', 'Steel');
 $product->setDescription('<p>Brad Integration Alpha, the long description.</p>');
 $product->setShortDescription('<p>Brad Integration Alpha.</p>');
 $repository->save($product);
+$objectManager->get(ProductAction::class)->updateAttributes([(int)$product->getId()], ['brad_material' => 'Steel'], Store::DEFAULT_STORE_ID);
 $objectManager->get(CategoryLinkManagementInterface::class)->assignProductToCategories('BRAD-IT-ALPHA', [(int)$category->getId()]);
 echo "Filled BRAD-IT-ALPHA\n";
