@@ -7,7 +7,7 @@ Magento 2 modules for integrating BradSearch with your store's GraphQL layer.
 ## Requirements
 
 - Magento 2.4.x
-- PHP 7.4, 8.1, 8.2, 8.3, or 8.4
+- PHP 7.4, 8.1, 8.2, 8.3, 8.4, or 8.5 (PHP 8.5 needs Magento 2.4.9)
 - Composer 2.x
 
 ## Installation
@@ -25,6 +25,15 @@ bin/magento cache:clean
 **Stores → Configuration → BradSearch** in Magento Admin.
 
 You'll need API credentials from your BradSearch account.
+
+Turn live sync on in every store view your BradSearch application reads. Each store view
+sends only the products whose data changed in that store view, so a change seen only in a
+store view with live sync off is not sent.
+
+Set the **Stock** indexer to "Update by Schedule" (`bin/magento indexer:set-mode schedule
+cataloginventory_stock`). Live sync reads its changelog to send stock changes. It also compares
+each product's stock status with the one it last saw, which finds changes that leave no
+changelog row (imports that write the status directly, orders).
 
 ## Extending
 
@@ -64,8 +73,7 @@ composer check                # all of the above
 ```
 
 Pre-commit hooks run `phpcbf` + `phpcs` + `phpstan` on staged PHP files.
-Pre-push runs `psalm` + full test suite. CI (GitHub Actions) runs the same
-checks across PHP 7.4 / 8.1 / 8.2 / 8.3 on every PR.
+Pre-push runs `psalm` + full test suite.
 
 ## License
 
